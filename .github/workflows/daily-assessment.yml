@@ -1,0 +1,36 @@
+name: Daily Bot Assessment
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  assess:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      BOT_ASSESSOR_GITHUB_REPO: romaincortese-ui/bot-assessor
+      BOT_ASSESSOR_GITHUB_TOKEN: ${{ secrets.BOT_ASSESSOR_GITHUB_TOKEN || github.token }}
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      REDIS_URL: ${{ secrets.REDIS_URL }}
+      BOT_ASSESSOR_TELEGRAM_TOKEN: ${{ secrets.BOT_ASSESSOR_TELEGRAM_TOKEN }}
+      BOT_ASSESSOR_TELEGRAM_CHAT_ID: ${{ secrets.BOT_ASSESSOR_TELEGRAM_CHAT_ID }}
+      BOT_ASSESSOR_PUBLISH_COMPAT_REVIEWS: "true"
+      BOT_ASSESSOR_APPLY_OVERLAYS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install -g @railway/cli
+      - run: pip install -r requirements.txt
+      - run: pip install .
+      - run: bot-assessor run

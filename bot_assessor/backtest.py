@@ -33,6 +33,16 @@ class BacktestRunner:
     def run(self, bot: BotConfig, *, repo_path: str | Path) -> BacktestResult:
         if not bot.backtest_command:
             return BacktestResult(False, [], None, "", error="No backtest_command configured")
+        if bot.setup_command:
+            setup = self.runner.run(bot.setup_command, cwd=repo_path, env=bot.backtest_env, timeout_seconds=1800)
+            if not setup.ok:
+                return BacktestResult(
+                    ok=False,
+                    command=bot.backtest_command,
+                    returncode=setup.returncode,
+                    raw_output=setup.combined_output[-12000:],
+                    error=f"setup_command failed: {(setup.stderr or setup.stdout).strip()[-2000:]}",
+                )
         result = self.runner.run(bot.backtest_command, cwd=repo_path, env=bot.backtest_env, timeout_seconds=3600)
         parsed = parse_backtest_output(result.combined_output)
         return BacktestResult(

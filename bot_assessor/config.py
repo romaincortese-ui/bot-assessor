@@ -24,6 +24,7 @@ class BotConfig:
     railway_service: str | None = None
     railway_environment: str = "production"
     log_lines: int | None = None
+    setup_command: list[str] = field(default_factory=list)
     backtest_command: list[str] = field(default_factory=list)
     backtest_env: dict[str, str] = field(default_factory=dict)
     test_command: list[str] = field(default_factory=list)

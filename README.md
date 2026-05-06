@@ -15,6 +15,7 @@ It does **not** edit trading bot code or deploy bot changes. Code-changing optim
 For each bot in `assessor_config.example.json`, the assessor:
 
 - clones or updates the production GitHub repository
+- runs each bot's configured setup command, usually `pip install -r requirements.txt`
 - reads current git commit metadata
 - collects recent Railway logs using the Railway CLI
 - runs the configured rolling backtest / calibration command
@@ -96,6 +97,7 @@ Each bot supports:
 - `github_repo`: source repository to clone/pull
 - `railway_service`: Railway service name for logs
 - `backtest_command`: command run inside the cloned repo
+- `setup_command`: optional dependency/setup command run before the backtest
 - `backtest_env`: per-command environment overrides
 - `compatible_review_redis_key`: optional normalized daily-review Redis key
 - `overlay_redis_key`: optional parameter-overlay Redis key
