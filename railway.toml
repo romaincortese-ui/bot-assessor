@@ -1,0 +1,9 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "bot-assessor run"
+cronSchedule = "0 6 * * *"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 2
