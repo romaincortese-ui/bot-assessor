@@ -1,4 +1,4 @@
-from bot_assessor.publishers import GitHubIssuePublisher, TelegramNotifier
+from bot_assessor.publishers import GitHubIssuePublisher, GitHubPullRequestPublisher, TelegramNotifier
 
 
 class FakeResponse:
@@ -17,9 +17,17 @@ class FakeSession:
 
     def post(self, url, **kwargs):
         self.calls.append((url, kwargs))
+        if url.endswith("/pulls"):
+            return FakeResponse(201, {"html_url": "https://github.com/owner/repo/pull/2", "number": 2})
+        if url.endswith("/labels"):
+            return FakeResponse(200, {"ok": True})
         if "api.github.com" in url:
             return FakeResponse(201, {"html_url": "https://github.com/owner/repo/issues/1"})
         return FakeResponse(200, {"ok": True})
+
+    def put(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return FakeResponse(200, {"merged": True, "html_url": "https://github.com/owner/repo/pull/2"})
 
 
 def test_github_publisher_creates_issue() -> None:
@@ -46,3 +54,24 @@ def test_telegram_sends_small_report_message() -> None:
 
     assert result.ok is True
     assert session.calls[0][1]["json"]["text"] == "New daily report ready: https://github.test/report"
+
+
+def test_github_pr_publisher_creates_and_merges_pr() -> None:
+    session = FakeSession()
+    publisher = GitHubPullRequestPublisher(token="token", session=session)
+
+    created = publisher.create_pr(
+        repo="owner/repo",
+        title="Optimize",
+        body="Report",
+        head="bot-assessor/weekly/bot/20260506",
+        base="main",
+        labels=["weekly-optimizer"],
+    )
+    merged = publisher.merge_pr(repo="owner/repo", number=created.metadata["number"], commit_title="Optimize")
+
+    assert created.ok is True
+    assert created.url == "https://github.com/owner/repo/pull/2"
+    assert merged.ok is True
+    assert session.calls[0][1]["json"]["head"] == "bot-assessor/weekly/bot/20260506"
+    assert session.calls[-1][0].endswith("/pulls/2/merge")

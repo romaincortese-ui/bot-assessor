@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from bot_assessor.command import CommandRunner
@@ -31,6 +32,7 @@ class RepositoryManager:
         path = self.workdir / "repos" / bot.id
         path.parent.mkdir(parents=True, exist_ok=True)
         if (path / ".git").exists():
+            self.runner.run(["git", "remote", "set-url", "origin", self._clone_url(bot.github_repo)], cwd=path, timeout_seconds=120)
             self.runner.run(["git", "fetch", "origin", bot.default_branch], cwd=path, timeout_seconds=300)
             self.runner.run(["git", "checkout", bot.default_branch], cwd=path, timeout_seconds=120)
             self.runner.run(["git", "pull", "--ff-only", "origin", bot.default_branch], cwd=path, timeout_seconds=300)
@@ -49,6 +51,47 @@ class RepositoryManager:
         message = self._git(path, ["log", "-1", "--pretty=%s"]).strip()
         status = self._git(path, ["status", "--short"]).strip()
         return GitInfo(str(path), branch, commit, short_commit, message, dirty=bool(status))
+
+    def create_candidate_branch(self, bot: BotConfig, repo_path: str | Path, *, generated_at: datetime) -> str:
+        path = Path(repo_path)
+        branch = f"{bot.optimizer_branch_prefix}/{bot.id}/{generated_at.strftime('%Y%m%d-%H%M%S')}"
+        self.runner.run(["git", "fetch", "origin", bot.default_branch], cwd=path, timeout_seconds=300)
+        self.runner.run(["git", "checkout", bot.default_branch], cwd=path, timeout_seconds=120)
+        self.runner.run(["git", "pull", "--ff-only", "origin", bot.default_branch], cwd=path, timeout_seconds=300)
+        result = self.runner.run(["git", "checkout", "-B", branch], cwd=path, timeout_seconds=120)
+        if not result.ok:
+            raise RuntimeError(f"git branch creation failed for {bot.id}: {result.stderr or result.stdout}")
+        return branch
+
+    def changed_files(self, repo_path: str | Path) -> list[str]:
+        path = Path(repo_path)
+        result = self.runner.run(["git", "status", "--short"], cwd=path, timeout_seconds=120)
+        if not result.ok:
+            return []
+        files: list[str] = []
+        for line in result.stdout.splitlines():
+            if not line.strip():
+                continue
+            name = line[3:].strip()
+            if " -> " in name:
+                name = name.split(" -> ", 1)[1].strip()
+            files.append(name.replace("\\", "/"))
+        return files
+
+    def commit_all(self, repo_path: str | Path, *, message: str) -> bool:
+        path = Path(repo_path)
+        if not self.changed_files(path):
+            return False
+        self.runner.run(["git", "config", "user.name", "bot-assessor"], cwd=path, timeout_seconds=120)
+        self.runner.run(["git", "config", "user.email", "bot-assessor@users.noreply.github.com"], cwd=path, timeout_seconds=120)
+        self.runner.run(["git", "add", "-A"], cwd=path, timeout_seconds=120)
+        result = self.runner.run(["git", "commit", "-m", message], cwd=path, timeout_seconds=300)
+        return result.ok
+
+    def push_branch(self, repo_path: str | Path, *, branch: str) -> bool:
+        path = Path(repo_path)
+        result = self.runner.run(["git", "push", "--force-with-lease", "-u", "origin", branch], cwd=path, timeout_seconds=600)
+        return result.ok
 
     def _git(self, cwd: Path, args: list[str]) -> str:
         result = self.runner.run(["git", *args], cwd=cwd, timeout_seconds=120)

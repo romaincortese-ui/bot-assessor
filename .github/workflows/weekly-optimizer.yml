@@ -1,0 +1,29 @@
+name: Weekly Bot Optimizer
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 7 * * 1"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  optimize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      BOT_ASSESSOR_GITHUB_REPO: romaincortese-ui/bot-assessor
+      BOT_ASSESSOR_GITHUB_TOKEN: ${{ secrets.BOT_ASSESSOR_GITHUB_TOKEN }}
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      REDIS_URL: ${{ secrets.REDIS_URL }}
+      BOT_ASSESSOR_ALLOW_AUTO_MERGE: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: pip install .
+      - run: bot-assessor optimize

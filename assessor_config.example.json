@@ -15,11 +15,22 @@
       "setup_command": ["python", "-m", "pip", "install", "-r", "requirements.txt"],
       "backtest_command": ["python", "-m", "backtest.run_daily_calibration"],
       "backtest_env": {"BACKTEST_ROLLING_DAYS": "30", "BACKTEST_PRINT_FULL_REPORT": "false"},
+      "test_command": ["python", "-m", "pytest"],
       "maturity": "mature",
       "compatible_review_redis_key": "mexc_daily_review",
       "overlay_redis_key": "bot_assessor:mexc_spot:overlays",
       "allow_parameter_overlays": true,
-      "allowed_overlay_types": ["score_offset", "strategy_block", "symbol_block", "threshold_adjustment"]
+      "allowed_overlay_types": ["score_offset", "strategy_block", "symbol_block", "threshold_adjustment"],
+      "optimizer_enabled": true,
+      "optimizer_command": [],
+      "optimizer_backtests": [
+        {"name": "30d", "command": ["python", "-m", "backtest.run_daily_calibration"], "env": {"BACKTEST_ROLLING_DAYS": "30", "BACKTEST_PRINT_FULL_REPORT": "false"}},
+        {"name": "60d", "command": ["python", "-m", "backtest.run_daily_calibration"], "env": {"BACKTEST_ROLLING_DAYS": "60", "BACKTEST_PRINT_FULL_REPORT": "false"}}
+      ],
+      "optimizer_guardrails": {"require_tests": true, "require_backtests": true, "require_pnl_improvement": true, "require_profit_factor_not_worse": true, "min_trades": 5, "max_drawdown_worsening": 0.02},
+      "allowed_pr_file_patterns": [],
+      "auto_merge_enabled": true,
+      "auto_merge_allowed_file_patterns": ["*calibration*.json", "**/*calibration*.json", "*parameter*.json", "**/*parameter*.json", "*config*.json", "**/*config*.json"]
     },
     {
       "id": "mexc_futures",
@@ -30,11 +41,22 @@
       "setup_command": ["python", "-m", "pip", "install", "-r", "requirements.txt"],
       "backtest_command": ["python", "run_daily_calibration.py"],
       "backtest_env": {"FUTURES_BACKTEST_ROLLING_DAYS": "30", "BACKTEST_PRINT_FULL_REPORT": "false"},
+      "test_command": ["python", "-m", "pytest"],
       "maturity": "mature_high_risk",
       "compatible_review_redis_key": "mexc_futures_daily_review",
       "overlay_redis_key": "bot_assessor:mexc_futures:overlays",
       "allow_parameter_overlays": true,
-      "allowed_overlay_types": ["score_offset", "strategy_block", "symbol_block", "threshold_adjustment"]
+      "allowed_overlay_types": ["score_offset", "strategy_block", "symbol_block", "threshold_adjustment"],
+      "optimizer_enabled": true,
+      "optimizer_command": [],
+      "optimizer_backtests": [
+        {"name": "30d", "command": ["python", "run_daily_calibration.py"], "env": {"FUTURES_BACKTEST_ROLLING_DAYS": "30", "BACKTEST_PRINT_FULL_REPORT": "false"}},
+        {"name": "60d", "command": ["python", "run_daily_calibration.py"], "env": {"FUTURES_BACKTEST_ROLLING_DAYS": "60", "BACKTEST_PRINT_FULL_REPORT": "false"}}
+      ],
+      "optimizer_guardrails": {"require_tests": true, "require_backtests": true, "require_pnl_improvement": true, "require_profit_factor_not_worse": true, "min_trades": 8, "max_drawdown_worsening": 0.015},
+      "allowed_pr_file_patterns": [],
+      "auto_merge_enabled": true,
+      "auto_merge_allowed_file_patterns": ["*calibration*.json", "**/*calibration*.json", "*parameter*.json", "**/*parameter*.json", "*config*.json", "**/*config*.json"]
     },
     {
       "id": "forex",
@@ -45,11 +67,22 @@
       "setup_command": ["python", "-m", "pip", "install", "-r", "requirements.txt"],
       "backtest_command": ["python", "run_daily_calibration.py"],
       "backtest_env": {"BACKTEST_ROLLING_DAYS": "30"},
+      "test_command": ["python", "-m", "pytest"],
       "maturity": "macro_mature",
       "compatible_review_redis_key": "bot_assessor:forex:daily_review",
       "overlay_redis_key": "bot_assessor:forex:overlays",
       "allow_parameter_overlays": true,
-      "allowed_overlay_types": ["score_offset", "strategy_block", "pair_block"]
+      "allowed_overlay_types": ["score_offset", "strategy_block", "pair_block"],
+      "optimizer_enabled": true,
+      "optimizer_command": [],
+      "optimizer_backtests": [
+        {"name": "30d", "command": ["python", "run_daily_calibration.py"], "env": {"BACKTEST_ROLLING_DAYS": "30"}},
+        {"name": "90d", "command": ["python", "run_daily_calibration.py"], "env": {"BACKTEST_ROLLING_DAYS": "90"}}
+      ],
+      "optimizer_guardrails": {"require_tests": true, "require_backtests": true, "require_pnl_improvement": true, "require_profit_factor_not_worse": true, "min_trades": 3, "max_drawdown_worsening": 0.01},
+      "allowed_pr_file_patterns": [],
+      "auto_merge_enabled": false,
+      "auto_merge_allowed_file_patterns": []
     },
     {
       "id": "gold",
@@ -60,11 +93,22 @@
       "setup_command": ["python", "-m", "pip", "install", "-r", "requirements.txt"],
       "backtest_command": ["python", "run_daily_calibration.py"],
       "backtest_env": {"GOLD_BACKTEST_ROLLING_DAYS": "30"},
+      "test_command": ["python", "-m", "pytest"],
       "maturity": "macro_mature_high_risk",
       "compatible_review_redis_key": "bot_assessor:gold:daily_review",
       "overlay_redis_key": "bot_assessor:gold:overlays",
       "allow_parameter_overlays": true,
-      "allowed_overlay_types": ["score_offset", "strategy_block"]
+      "allowed_overlay_types": ["score_offset", "strategy_block"],
+      "optimizer_enabled": true,
+      "optimizer_command": [],
+      "optimizer_backtests": [
+        {"name": "30d", "command": ["python", "run_daily_calibration.py"], "env": {"GOLD_BACKTEST_ROLLING_DAYS": "30"}},
+        {"name": "60d", "command": ["python", "run_daily_calibration.py"], "env": {"GOLD_BACKTEST_ROLLING_DAYS": "60"}}
+      ],
+      "optimizer_guardrails": {"require_tests": true, "require_backtests": true, "require_pnl_improvement": true, "require_profit_factor_not_worse": true, "min_trades": 2, "max_drawdown_worsening": 0.01},
+      "allowed_pr_file_patterns": [],
+      "auto_merge_enabled": false,
+      "auto_merge_allowed_file_patterns": []
     },
     {
       "id": "commodities",
@@ -79,7 +123,11 @@
       "compatible_review_redis_key": "bot_assessor:commodities:daily_review",
       "overlay_redis_key": "bot_assessor:commodities:overlays",
       "allow_parameter_overlays": false,
-      "allowed_overlay_types": []
+      "allowed_overlay_types": [],
+      "optimizer_enabled": false,
+      "optimizer_command": [],
+      "optimizer_guardrails": {"require_tests": true, "require_backtests": true},
+      "auto_merge_enabled": false
     },
     {
       "id": "bonds",
@@ -94,7 +142,11 @@
       "compatible_review_redis_key": "bot_assessor:bonds:daily_review",
       "overlay_redis_key": "bot_assessor:bonds:overlays",
       "allow_parameter_overlays": false,
-      "allowed_overlay_types": []
+      "allowed_overlay_types": [],
+      "optimizer_enabled": false,
+      "optimizer_command": [],
+      "optimizer_guardrails": {"require_tests": true, "require_backtests": true},
+      "auto_merge_enabled": false
     }
   ]
 }

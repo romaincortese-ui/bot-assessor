@@ -35,6 +35,15 @@ class BotConfig:
     overlay_redis_key: str | None = None
     allow_parameter_overlays: bool = False
     allowed_overlay_types: list[str] = field(default_factory=list)
+    optimizer_enabled: bool = False
+    optimizer_command: list[str] = field(default_factory=list)
+    optimizer_env: dict[str, str] = field(default_factory=dict)
+    optimizer_branch_prefix: str = "bot-assessor/weekly"
+    optimizer_backtests: list[dict[str, Any]] = field(default_factory=list)
+    optimizer_guardrails: dict[str, Any] = field(default_factory=dict)
+    allowed_pr_file_patterns: list[str] = field(default_factory=list)
+    auto_merge_enabled: bool = False
+    auto_merge_allowed_file_patterns: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any], *, default_log_lines: int) -> "BotConfig":
@@ -79,13 +88,25 @@ class RuntimeOptions:
     apply_overlays: bool = False
     skip_backtests: bool = False
     skip_logs: bool = False
+    skip_tests: bool = False
+    allow_auto_merge: bool = False
 
     @classmethod
-    def from_env(cls, *, dry_run: bool = False, skip_backtests: bool = False, skip_logs: bool = False) -> "RuntimeOptions":
+    def from_env(
+        cls,
+        *,
+        dry_run: bool = False,
+        skip_backtests: bool = False,
+        skip_logs: bool = False,
+        skip_tests: bool = False,
+        allow_auto_merge: bool = False,
+    ) -> "RuntimeOptions":
         return cls(
             dry_run=dry_run or _env_bool("BOT_ASSESSOR_DRY_RUN", False),
             publish_compatible_reviews=_env_bool("BOT_ASSESSOR_PUBLISH_COMPAT_REVIEWS", False),
             apply_overlays=_env_bool("BOT_ASSESSOR_APPLY_OVERLAYS", False),
             skip_backtests=skip_backtests or _env_bool("BOT_ASSESSOR_SKIP_BACKTESTS", False),
             skip_logs=skip_logs or _env_bool("BOT_ASSESSOR_SKIP_LOGS", False),
+            skip_tests=skip_tests or _env_bool("BOT_ASSESSOR_SKIP_TESTS", False),
+            allow_auto_merge=allow_auto_merge or _env_bool("BOT_ASSESSOR_ALLOW_AUTO_MERGE", False),
         )

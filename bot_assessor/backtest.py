@@ -33,21 +33,39 @@ class BacktestRunner:
     def run(self, bot: BotConfig, *, repo_path: str | Path) -> BacktestResult:
         if not bot.backtest_command:
             return BacktestResult(False, [], None, "", error="No backtest_command configured")
-        if bot.setup_command:
-            setup = self.runner.run(bot.setup_command, cwd=repo_path, env=bot.backtest_env, timeout_seconds=1800)
+        return self.run_command(
+            bot.backtest_command,
+            repo_path=repo_path,
+            setup_command=bot.setup_command,
+            env=bot.backtest_env,
+        )
+
+    def run_command(
+        self,
+        command: list[str],
+        *,
+        repo_path: str | Path,
+        setup_command: list[str] | None = None,
+        env: dict[str, str] | None = None,
+        timeout_seconds: int = 3600,
+    ) -> BacktestResult:
+        if not command:
+            return BacktestResult(False, [], None, "", error="No backtest_command configured")
+        if setup_command:
+            setup = self.runner.run(setup_command, cwd=repo_path, env=env, timeout_seconds=1800)
             if not setup.ok:
                 return BacktestResult(
                     ok=False,
-                    command=bot.backtest_command,
+                    command=command,
                     returncode=setup.returncode,
                     raw_output=setup.combined_output[-12000:],
                     error=f"setup_command failed: {(setup.stderr or setup.stdout).strip()[-2000:]}",
                 )
-        result = self.runner.run(bot.backtest_command, cwd=repo_path, env=bot.backtest_env, timeout_seconds=3600)
+        result = self.runner.run(command, cwd=repo_path, env=env, timeout_seconds=timeout_seconds)
         parsed = parse_backtest_output(result.combined_output)
         return BacktestResult(
             ok=result.ok,
-            command=bot.backtest_command,
+            command=command,
             returncode=result.returncode,
             raw_output=result.combined_output[-12000:],
             error=None if result.ok else (result.stderr.strip() or result.stdout.strip())[-2000:],

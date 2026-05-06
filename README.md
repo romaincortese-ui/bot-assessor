@@ -1,14 +1,16 @@
 # Bot Assessor
 
-Standalone daily assessment service for the trading bot fleet.
+Standalone assessment and gated improvement service for the trading bot fleet.
 
-The service implements phases 1, 2, and 3 of the automation plan:
+The service implements phases 1 through 5 of the automation plan:
 
 1. Collect production context from Railway logs and current GitHub code.
 2. Build normalized daily review payloads for every configured bot.
 3. Publish bounded, parameter-only overlay payloads to Redis when explicitly enabled.
+4. Run a weekly PR-generating optimizer that creates candidate branches, runs tests, compares baseline/candidate backtests, and opens PRs.
+5. Allow limited auto-merge only when global and per-bot gates are enabled and changed files match a strict allowlist.
 
-It does **not** edit trading bot code or deploy bot changes. Code-changing optimizers should run as a separate, gated weekly PR workflow.
+Daily runs do **not** edit trading bot code or deploy bot changes. Weekly optimizer runs can open PRs only after an explicit per-bot `optimizer_command` creates a candidate patch.
 
 ## What It Does
 
@@ -26,6 +28,16 @@ For each bot in `assessor_config.example.json`, the assessor:
 - sends a short Telegram message: `New daily report ready: <link>`
 - optionally publishes review and overlay JSON to Redis
 
+The weekly optimizer:
+
+- creates a fresh candidate branch in each enabled bot repo
+- runs the configured `optimizer_command` inside the bot repo
+- runs full tests when `test_command` is configured
+- runs baseline and candidate backtests across configured scenarios
+- enforces guardrails such as minimum trades, PnL improvement, profit-factor quality, and drawdown limits
+- opens a GitHub PR in the bot repo with the report in the PR body
+- optionally auto-merges only when `BOT_ASSESSOR_ALLOW_AUTO_MERGE=true`, `auto_merge_enabled=true`, guardrails pass, and every changed file matches `auto_merge_allowed_file_patterns`
+
 ## Required Variables
 
 Set these in the `bot-assessor` Railway service:
@@ -33,6 +45,7 @@ Set these in the `bot-assessor` Railway service:
 - `BOT_ASSESSOR_GITHUB_TOKEN`: GitHub token with permission to create issues in `romaincortese-ui/bot-assessor`
 - `BOT_ASSESSOR_GITHUB_REPO=romaincortese-ui/bot-assessor`
 - `RAILWAY_TOKEN`: token used by the Railway CLI to read logs
+- For phase 4/5 PR creation across bot repos, `BOT_ASSESSOR_GITHUB_TOKEN` must also be able to push branches and open pull requests in each target bot repository.
 
 See `.env.example` for the full variable list.
 
@@ -46,6 +59,7 @@ Optional Redis variables:
 - `REDIS_URL`: Redis connection string from the shared Redis project
 - `BOT_ASSESSOR_PUBLISH_COMPAT_REVIEWS=true`: publish each normalized review to the bot's compatible review key
 - `BOT_ASSESSOR_APPLY_OVERLAYS=true`: publish safe overlay payloads to the configured overlay keys
+- `BOT_ASSESSOR_ALLOW_AUTO_MERGE=true`: allow phase 5 auto-merge for bots that also set `auto_merge_enabled=true`
 
 Safety defaults:
 
@@ -54,6 +68,9 @@ Safety defaults:
 - Redis publishing is skipped unless `REDIS_URL` exists.
 - Overlay publishing is skipped unless `BOT_ASSESSOR_APPLY_OVERLAYS=true`.
 - Research bots, currently Commodities and Bonds, have overlays disabled in config.
+- Weekly auto-merge is skipped unless both the global variable and per-bot config allow it.
+- Forex and Gold are configured for manual PR approval only.
+- Commodities and Bonds have the weekly optimizer disabled until their data/research foundations are stronger.
 
 ## Local Run
 
@@ -63,9 +80,11 @@ python -m venv .venv
 pip install -r requirements-dev.txt
 copy assessor_config.example.json assessor_config.json
 python -m bot_assessor run --dry-run
+python -m bot_assessor optimize --dry-run
 ```
 
 Dry-run mode writes artifacts locally and skips GitHub issue creation, Telegram send, and Redis writes.
+For the weekly optimizer, dry-run mode still runs local checks but skips branch push, PR creation, and auto-merge.
 
 ## Railway Deployment
 
@@ -80,6 +99,11 @@ bot-assessor run
 ```toml
 cronSchedule = "0 6 * * *"
 ```
+
+This repo also includes GitHub Actions workflows:
+
+- `daily-assessment.yml`: daily assessment at `06:00 UTC`
+- `weekly-optimizer.yml`: weekly optimizer at `07:00 UTC` on Mondays
 
 ## Configuration
 
@@ -102,6 +126,29 @@ Each bot supports:
 - `compatible_review_redis_key`: optional normalized daily-review Redis key
 - `overlay_redis_key`: optional parameter-overlay Redis key
 - `allow_parameter_overlays`: whether safe overlays may be published
+- `optimizer_enabled`: whether the weekly optimizer should consider the bot
+- `optimizer_command`: the bot-specific agent/script command that edits the candidate branch
+- `optimizer_backtests`: named baseline/candidate backtest scenarios, usually 30/60/90-day windows
+- `optimizer_guardrails`: pass/fail rules for tests and candidate performance
+- `allowed_pr_file_patterns`: optional file allowlist for PR generation
+- `auto_merge_enabled`: per-bot phase 5 auto-merge gate
+- `auto_merge_allowed_file_patterns`: stricter file allowlist for phase 5 auto-merge
+
+The example config enables weekly optimizer consideration for Spot, Futures, Forex, and Gold, but leaves `optimizer_command` empty. Add a bot-specific command only after that bot has a deterministic patch generator or agent workflow. Commodities and Bonds remain assessment-only.
+
+## Weekly Optimizer
+
+```powershell
+python -m bot_assessor optimize --dry-run
+python -m bot_assessor optimize --bot mexc_spot
+```
+
+Recommended rollout:
+
+1. Add `optimizer_command` for one mature bot.
+2. Run `optimize --dry-run --bot <id>` until the generated patch, tests, and backtests look sane.
+3. Run without dry-run to open manual-review PRs.
+4. Only after several clean weekly PRs, set `BOT_ASSESSOR_ALLOW_AUTO_MERGE=true` and keep auto-merge limited to JSON/config/calibration files.
 
 ## Tests
 

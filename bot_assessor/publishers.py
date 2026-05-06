@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import requests
@@ -14,6 +14,7 @@ class PublicationResult:
     url: str | None = None
     skipped: bool = False
     error: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class GitHubIssuePublisher:
@@ -33,7 +34,60 @@ class GitHubIssuePublisher:
         )
         if response.status_code >= 300:
             return PublicationResult(ok=False, error=f"GitHub issue publish failed: {response.status_code} {response.text[:500]}")
-        return PublicationResult(ok=True, url=response.json().get("html_url"))
+        payload = response.json()
+        return PublicationResult(ok=True, url=payload.get("html_url"), metadata={"number": payload.get("number")})
+
+
+class GitHubPullRequestPublisher:
+    def __init__(self, *, token: str | None = None, session: requests.Session | None = None) -> None:
+        self.token = token or os.getenv("BOT_ASSESSOR_GITHUB_TOKEN") or os.getenv("GITHUB_TOKEN")
+        self.session = session or requests.Session()
+
+    def create_pr(
+        self,
+        *,
+        repo: str,
+        title: str,
+        body: str,
+        head: str,
+        base: str,
+        labels: list[str] | None = None,
+        dry_run: bool = False,
+    ) -> PublicationResult:
+        if dry_run or not self.token:
+            return PublicationResult(ok=True, skipped=True)
+        response = self.session.post(
+            f"https://api.github.com/repos/{repo}/pulls",
+            headers={"Authorization": f"Bearer {self.token}", "Accept": "application/vnd.github+json"},
+            json={"title": title, "body": body, "head": head, "base": base, "draft": False},
+            timeout=30,
+        )
+        if response.status_code >= 300:
+            return PublicationResult(ok=False, error=f"GitHub PR creation failed for {repo}: {response.status_code} {response.text[:500]}")
+        payload = response.json()
+        number = payload.get("number")
+        if labels and number:
+            self.session.post(
+                f"https://api.github.com/repos/{repo}/issues/{number}/labels",
+                headers={"Authorization": f"Bearer {self.token}", "Accept": "application/vnd.github+json"},
+                json={"labels": labels},
+                timeout=30,
+            )
+        return PublicationResult(ok=True, url=payload.get("html_url"), metadata={"number": number})
+
+    def merge_pr(self, *, repo: str, number: int | None, commit_title: str, dry_run: bool = False) -> PublicationResult:
+        if dry_run or not self.token or number is None:
+            return PublicationResult(ok=True, skipped=True)
+        response = self.session.put(
+            f"https://api.github.com/repos/{repo}/pulls/{number}/merge",
+            headers={"Authorization": f"Bearer {self.token}", "Accept": "application/vnd.github+json"},
+            json={"commit_title": commit_title, "merge_method": "squash"},
+            timeout=30,
+        )
+        if response.status_code >= 300:
+            return PublicationResult(ok=False, error=f"GitHub PR merge failed for {repo}#{number}: {response.status_code} {response.text[:500]}")
+        payload = response.json()
+        return PublicationResult(ok=True, url=payload.get("html_url"), metadata={"merged": payload.get("merged")})
 
 
 class TelegramNotifier:
