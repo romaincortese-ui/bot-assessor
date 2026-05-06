@@ -1,4 +1,18 @@
-from bot_assessor.backtest import parse_backtest_output
+from pathlib import Path
+
+from bot_assessor.backtest import BacktestRunner, parse_backtest_output
+from bot_assessor.command import CommandResult
+from bot_assessor.config import BotConfig
+
+
+class RecordingRunner:
+    def __init__(self, results: list[CommandResult]) -> None:
+        self.results = results
+        self.commands: list[list[str]] = []
+
+    def run(self, command, *, cwd=None, env=None, timeout_seconds=900):
+        self.commands.append(list(command))
+        return self.results.pop(0)
 
 
 def test_parse_json_summary_backtest_output() -> None:
@@ -19,3 +33,48 @@ def test_parse_text_backtest_output() -> None:
     assert round(parsed["return_pct"], 6) == 0.014
     assert parsed["profit_factor"] == 2.1
     assert parsed["max_drawdown"] == -0.03
+
+
+def test_backtest_runner_runs_setup_before_backtest(tmp_path: Path) -> None:
+    runner = RecordingRunner(
+        [
+            CommandResult(["python", "-m", "pip", "install", "-r", "requirements.txt"], str(tmp_path), 0, "installed", ""),
+            CommandResult(["python", "run_daily_calibration.py"], str(tmp_path), 0, "trades=1 pnl=2.50 pf=1.20", ""),
+        ]
+    )
+    bot = BotConfig(
+        id="gold",
+        name="Gold Bot",
+        github_repo="romaincortese-ui/gold-bot",
+        setup_command=["python", "-m", "pip", "install", "-r", "requirements.txt"],
+        backtest_command=["python", "run_daily_calibration.py"],
+    )
+
+    result = BacktestRunner(runner).run(bot, repo_path=tmp_path)
+
+    assert result.ok is True
+    assert runner.commands == [
+        ["python", "-m", "pip", "install", "-r", "requirements.txt"],
+        ["python", "run_daily_calibration.py"],
+    ]
+    assert result.total_trades == 1
+
+
+def test_backtest_runner_stops_when_setup_fails(tmp_path: Path) -> None:
+    runner = RecordingRunner(
+        [CommandResult(["python", "-m", "pip", "install", "-r", "requirements.txt"], str(tmp_path), 1, "", "missing package")]
+    )
+    bot = BotConfig(
+        id="gold",
+        name="Gold Bot",
+        github_repo="romaincortese-ui/gold-bot",
+        setup_command=["python", "-m", "pip", "install", "-r", "requirements.txt"],
+        backtest_command=["python", "run_daily_calibration.py"],
+    )
+
+    result = BacktestRunner(runner).run(bot, repo_path=tmp_path)
+
+    assert result.ok is False
+    assert result.error is not None
+    assert "setup_command failed" in result.error
+    assert runner.commands == [["python", "-m", "pip", "install", "-r", "requirements.txt"]]
