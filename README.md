@@ -33,6 +33,8 @@ Set these in the `bot-assessor` Railway service:
 - `BOT_ASSESSOR_GITHUB_REPO=romaincortese-ui/bot-assessor`
 - `RAILWAY_TOKEN`: token used by the Railway CLI to read logs
 
+See `.env.example` for the full variable list.
+
 Telegram notification variables, added at the end after coding/deploying:
 
 - `BOT_ASSESSOR_TELEGRAM_TOKEN`
