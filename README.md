@@ -150,6 +150,10 @@ Recommended rollout:
 3. Run without dry-run to open manual-review PRs.
 4. Only after several clean weekly PRs, set `BOT_ASSESSOR_ALLOW_AUTO_MERGE=true` and keep auto-merge limited to JSON/config/calibration files.
 
+## Solution Designs
+
+- [docs/indices-bot-solution-design.md](docs/indices-bot-solution-design.md): AI-agent-ready specification for a new OANDA indices trading bot.
+
 ## Tests
 
 ```powershell
