@@ -53,6 +53,8 @@ Telegram notification variables, added at the end after coding/deploying:
 
 - `BOT_ASSESSOR_TELEGRAM_TOKEN`
 - `BOT_ASSESSOR_TELEGRAM_CHAT_ID`
+- `BOT_ASSESSOR_HEARTBEAT_SECONDS=21600`: minimum interval for the fleet heartbeat command.
+- `BOT_ASSESSOR_HEARTBEAT_SOURCES`: optional JSON list for overriding Redis/file metric sources.
 
 Optional Redis variables:
 
@@ -81,10 +83,12 @@ pip install -r requirements-dev.txt
 copy assessor_config.example.json assessor_config.json
 python -m bot_assessor run --dry-run
 python -m bot_assessor optimize --dry-run
+python -m bot_assessor heartbeat --dry-run --force
 ```
 
 Dry-run mode writes artifacts locally and skips GitHub issue creation, Telegram send, and Redis writes.
 For the weekly optimizer, dry-run mode still runs local checks but skips branch push, PR creation, and auto-merge.
+The `heartbeat` command builds one concise fleet Telegram message from Redis/runtime-state metrics every 6 hours by default.
 
 ## Railway Deployment
 
@@ -103,6 +107,7 @@ cronSchedule = "0 6 * * *"
 This repo also includes GitHub Actions workflows:
 
 - `daily-assessment.yml`: daily assessment at `06:00 UTC`
+- `fleet-heartbeat.yml`: fleet P&L/balance heartbeat every 6 hours
 - `weekly-optimizer.yml`: weekly optimizer at `07:00 UTC` on Mondays
 
 ## Configuration

@@ -97,11 +97,14 @@ class TelegramNotifier:
         self.session = session or requests.Session()
 
     def notify_report_ready(self, *, report_url: str | None, dry_run: bool = False) -> PublicationResult:
-        if dry_run or not self.token or not self.chat_id:
-            return PublicationResult(ok=True, skipped=True)
         text = "New daily report ready"
         if report_url:
             text = f"{text}: {report_url}"
+        return self.send_message(text, dry_run=dry_run)
+
+    def send_message(self, text: str, *, dry_run: bool = False) -> PublicationResult:
+        if dry_run or not self.token or not self.chat_id:
+            return PublicationResult(ok=True, skipped=True)
         response = self.session.post(
             f"https://api.telegram.org/bot{self.token}/sendMessage",
             json={"chat_id": self.chat_id, "text": text, "disable_web_page_preview": True},

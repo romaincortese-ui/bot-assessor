@@ -1,0 +1,27 @@
+name: Fleet Heartbeat
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 */6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      REDIS_URL: ${{ secrets.REDIS_URL }}
+      BOT_ASSESSOR_TELEGRAM_TOKEN: ${{ secrets.BOT_ASSESSOR_TELEGRAM_TOKEN }}
+      BOT_ASSESSOR_TELEGRAM_CHAT_ID: ${{ secrets.BOT_ASSESSOR_TELEGRAM_CHAT_ID }}
+      BOT_ASSESSOR_HEARTBEAT_SECONDS: "21600"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: pip install .
+      - run: bot-assessor heartbeat
