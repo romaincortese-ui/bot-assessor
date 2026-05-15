@@ -83,13 +83,13 @@ def main(argv: list[str] | None = None) -> int:
         config = AssessorConfig.load(args.config)
         options = RuntimeOptions.from_env(dry_run=args.dry_run)
         actions = scheduled_actions()
-        heartbeat_result = send_fleet_heartbeat(dry_run=options.dry_run, force=True)
         assessment = None
         optimizer = None
         if actions.daily_assessment:
             assessment = BotAssessor(config, options).run()
         if actions.weekly_optimizer:
             optimizer = WeeklyOptimizer(config, options).run()
+        heartbeat_result = send_fleet_heartbeat(dry_run=options.dry_run, force=True)
         payload = {
             "actions": asdict(actions),
             "heartbeat": asdict(heartbeat_result),
