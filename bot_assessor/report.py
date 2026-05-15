@@ -15,8 +15,8 @@ def render_markdown(reviews: list[dict[str, Any]], *, generated_at: datetime, wi
         "",
         "## Fleet Summary",
         "",
-        "| Bot | Health | Commit | Trades | PnL | PF | Key issues |",
-        "| --- | ---: | --- | ---: | ---: | ---: | --- |",
+        "| Bot | Health | Deploy | Commit | Trades | PnL | PF | Key issues |",
+        "| --- | ---: | --- | --- | ---: | ---: | ---: | --- |",
     ]
     for review in reviews:
         bt = review.get("backtest", {})
@@ -31,11 +31,12 @@ def render_markdown(reviews: list[dict[str, Any]], *, generated_at: datetime, wi
         if not issues:
             issues.append("none")
         lines.append(
-            "| {bot} | {score} {state} | `{commit}` | {trades} | {pnl} | {pf} | {issues} |".format(
+            "| {bot} | {score} {state} | {deploy} | `{commit}` | {trades} | {pnl} | {pf} | {issues} |".format(
                 bot=review.get("bot_name"),
                 score=review.get("health", {}).get("score"),
                 state=review.get("health", {}).get("state"),
-                commit=review.get("production", {}).get("short_commit"),
+                deploy=_deployment_label(review),
+                commit=review.get("production", {}).get("active_short_commit") or review.get("production", {}).get("short_commit"),
                 trades=_fmt(bt.get("total_trades")),
                 pnl=_fmt(bt.get("total_pnl")),
                 pf=_fmt(bt.get("profit_factor")),
@@ -63,11 +64,14 @@ def write_artifacts(artifact_dir: str | Path, reviews: list[dict[str, Any]], mar
 def _render_bot_section(review: dict[str, Any]) -> list[str]:
     logs = review.get("logs", {})
     bt = review.get("backtest", {})
+    production = review.get("production", {})
+    railway = production.get("railway") or {}
     lines = [
         "",
         f"## {review.get('bot_name')}",
         "",
-        f"Production: `{review.get('production', {}).get('short_commit')}` - {review.get('production', {}).get('commit_message')}",
+        f"Production: `{production.get('active_short_commit') or production.get('short_commit')}` - {production.get('commit_message')}",
+        f"Railway: {railway.get('service') or production.get('railway_service')} / {railway.get('environment') or production.get('railway_environment')} - {_deployment_label(review)}",
         f"Health: {review.get('health', {}).get('score')} ({review.get('health', {}).get('state')})",
         f"Backtest: trades={_fmt(bt.get('total_trades'))}, pnl={_fmt(bt.get('total_pnl'))}, pf={_fmt(bt.get('profit_factor'))}, max_dd={_fmt_pct(bt.get('max_drawdown'))}",
         f"Logs: errors={logs.get('errors')}, warnings={logs.get('warnings')}, no_fills={logs.get('order_not_filled')}, missed={logs.get('missed_opportunity_count')}",
@@ -80,6 +84,12 @@ def _render_bot_section(review: dict[str, Any]) -> list[str]:
     if overlays:
         lines.append("")
         lines.append(f"Parameter overlays prepared: {len(overlays)}")
+    variable_plan = review.get("railway_variable_plan") or {}
+    proposals = variable_plan.get("proposals") or []
+    blocked = variable_plan.get("blocked") or []
+    if proposals or blocked:
+        lines.append("")
+        lines.append(f"Railway variable proposals: {len(proposals)} prepared, {len(blocked)} blocked by safety checks")
     noteworthy = logs.get("noteworthy_lines") or []
     if noteworthy:
         lines.append("")
@@ -104,3 +114,11 @@ def _fmt_pct(value: Any) -> str:
         return f"{float(value):.2%}"
     except (TypeError, ValueError):
         return str(value)
+
+
+def _deployment_label(review: dict[str, Any]) -> str:
+    railway = (review.get("production") or {}).get("railway") or {}
+    status = railway.get("status") or "unknown"
+    if railway.get("ok") is False:
+        return f"unknown ({railway.get('error') or 'status unavailable'})"
+    return str(status)

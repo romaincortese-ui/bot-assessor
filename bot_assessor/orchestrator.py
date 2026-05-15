@@ -11,11 +11,13 @@ from bot_assessor.config import AssessorConfig, RuntimeOptions
 from bot_assessor.logs import analyze_logs
 from bot_assessor.overlays import build_safe_overlays, overlay_payload
 from bot_assessor.publishers import GitHubIssuePublisher, PublicationResult, RedisPublisher, TelegramNotifier
-from bot_assessor.railway import RailwayLogCollector
+from bot_assessor.railway import RailwayDeploymentCollector, RailwayLogCollector
 from bot_assessor.recommendations import build_recommendations
 from bot_assessor.report import render_markdown, write_artifacts
 from bot_assessor.repository import RepositoryManager
 from bot_assessor.review import build_review, review_to_dict
+from bot_assessor.runtime_status import RuntimeStatusCollector
+from bot_assessor.variables import build_railway_variable_plan
 
 
 @dataclass(frozen=True)
@@ -44,10 +46,12 @@ class BotAssessor:
         self.runner = runner or CommandRunner()
         self.repositories = RepositoryManager(self.runner, workdir=config.workdir)
         self.logs = RailwayLogCollector(self.runner)
+        self.deployments = RailwayDeploymentCollector(self.runner)
         self.backtests = BacktestRunner(self.runner)
         self.github = github or GitHubIssuePublisher(repo=config.github_repo)
         self.telegram = telegram or TelegramNotifier()
         self.redis = redis_publisher or RedisPublisher()
+        self.runtime_status = RuntimeStatusCollector(redis_url=getattr(self.redis, "redis_url", ""))
 
     def run(self) -> AssessmentRunResult:
         generated_at = datetime.now(timezone.utc)
@@ -56,18 +60,23 @@ class BotAssessor:
         for bot in self.config.bots:
             repo_path = self.repositories.ensure_repo(bot)
             git_info = self.repositories.git_info(repo_path)
+            deployment = self.deployments.collect(bot, repo_path=repo_path)
+            runtime_status = self.runtime_status.collect(bot, repo_path=repo_path)
             log_text = ""
             if not self.options.skip_logs:
-                collection = self.logs.collect(bot, repo_path=repo_path, lines=bot.log_lines or self.config.log_lines)
+                collection = self.logs.collect(bot, repo_path=repo_path, lines=bot.log_lines or self.config.log_lines, window_hours=self.config.window_hours)
                 log_text = collection.text
                 if not collection.ok and collection.error:
                     log_text += f"\nERROR collecting logs: {collection.error}"
+                if runtime_status.ok and (not collection.ok or not log_text.strip()):
+                    log_text += f"\n{runtime_status.text}"
             log_analysis = analyze_logs(log_text)
             backtest: BacktestResult | None = None
             if not self.options.skip_backtests:
                 backtest = self.backtests.run(bot, repo_path=repo_path)
             recommendations = build_recommendations(bot, log_analysis, backtest)
             overlays = build_safe_overlays(bot, recommendations, generated_at=generated_at)
+            variable_plan = build_railway_variable_plan(bot, recommendations, overlays, generated_at=generated_at)
             review = build_review(
                 bot,
                 generated_at=generated_at,
@@ -77,6 +86,9 @@ class BotAssessor:
                 backtest=backtest,
                 recommendations=recommendations,
                 overlays=overlays,
+                deployment_status=deployment.as_dict(),
+                runtime_status=runtime_status.as_dict(),
+                railway_variable_plan=variable_plan,
             )
             review_dict = review_to_dict(review)
             reviews.append(review_dict)

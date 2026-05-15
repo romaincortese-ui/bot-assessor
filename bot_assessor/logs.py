@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 
 _SYMBOL_RE = re.compile(r"\bsymbol=([^\s]+)", re.IGNORECASE)
 _BLOCKED_BY_RE = re.compile(r"\bblocked_by=([^\s]+)", re.IGNORECASE)
+_REASON_RE = re.compile(r"\b(?:skip_reason|reason)=([^\s,)]+)", re.IGNORECASE)
+_STRATEGY_REASON_RE = re.compile(r"\b([A-Z][A-Z0-9_]+):([A-Za-z0-9_./<>=:-]+)")
 
 
 @dataclass(frozen=True)
@@ -58,11 +60,15 @@ def analyze_logs(text: str, *, max_noteworthy: int = 20) -> LogAnalysis:
         if "stale" in lowered or "no_fresh" in lowered or "missing_candles" in lowered or "missing" in lowered and "state" in lowered:
             stale += 1
             is_noteworthy = True
-        if "missed_opportunity" in lowered:
+        opportunity_skip = "[opportunity]" in lowered and (
+            "skip_reason" in lowered or "blocked" in lowered or "no_signal" in lowered or "filter_reasons" in lowered
+        )
+        if "missed_opportunity" in lowered or opportunity_skip:
             symbol_match = _SYMBOL_RE.search(line)
             blocker_match = _BLOCKED_BY_RE.search(line)
+            reason_match = _REASON_RE.search(line)
             symbol = symbol_match.group(1) if symbol_match else None
-            blocked_by = blocker_match.group(1) if blocker_match else None
+            blocked_by = blocker_match.group(1) if blocker_match else reason_match.group(1) if reason_match else _strategy_reason(line)
             missed.append(MissedOpportunity(line=line[:500], symbol=symbol, blocked_by=blocked_by))
             if blocked_by:
                 blockers[blocked_by] += 1
@@ -82,3 +88,10 @@ def analyze_logs(text: str, *, max_noteworthy: int = 20) -> LogAnalysis:
         top_blockers=blockers.most_common(10),
         noteworthy_lines=noteworthy,
     )
+
+
+def _strategy_reason(line: str) -> str | None:
+    matches = _STRATEGY_REASON_RE.findall(line)
+    if not matches:
+        return None
+    return ",".join(f"{strategy}:{reason}" for strategy, reason in matches[:3])

@@ -111,6 +111,32 @@
       "auto_merge_allowed_file_patterns": []
     },
     {
+      "id": "indices",
+      "name": "Indices Bot",
+      "github_repo": "romaincortese-ui/indices-bot",
+      "railway_service": "indices-bot",
+      "railway_environment": "production",
+      "setup_command": ["python", "-m", "pip", "install", "-r", "requirements.txt"],
+      "backtest_command": ["python", "-m", "indicesbot.backtest.run_backtest", "--online", "--days", "30", "--calibrated"],
+      "backtest_env": {"BACKTEST_DAYS": "30"},
+      "test_command": ["python", "-m", "pytest"],
+      "maturity": "macro_mature_high_risk",
+      "compatible_review_redis_key": "bot_assessor:indices:daily_review",
+      "overlay_redis_key": "bot_assessor:indices:overlays",
+      "allow_parameter_overlays": true,
+      "allowed_overlay_types": ["score_offset", "strategy_block", "symbol_block", "threshold_adjustment"],
+      "optimizer_enabled": true,
+      "optimizer_command": [],
+      "optimizer_backtests": [
+        {"name": "30d", "command": ["python", "-m", "indicesbot.backtest.run_backtest", "--online", "--days", "30", "--calibrated"], "env": {"BACKTEST_DAYS": "30"}},
+        {"name": "60d", "command": ["python", "-m", "indicesbot.backtest.run_backtest", "--online", "--days", "60", "--calibrated"], "env": {"BACKTEST_DAYS": "60"}}
+      ],
+      "optimizer_guardrails": {"require_tests": true, "require_backtests": true, "require_pnl_improvement": true, "require_profit_factor_not_worse": true, "min_trades": 2, "max_drawdown_worsening": 0.01},
+      "allowed_pr_file_patterns": [],
+      "auto_merge_enabled": false,
+      "auto_merge_allowed_file_patterns": []
+    },
+    {
       "id": "commodities",
       "name": "Commodities Bot",
       "github_repo": "romaincortese-ui/commodities_bot",

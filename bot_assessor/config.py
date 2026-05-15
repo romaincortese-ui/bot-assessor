@@ -23,13 +23,18 @@ class BotConfig:
     default_branch: str = "main"
     railway_service: str | None = None
     railway_environment: str = "production"
+    railway_project_id: str | None = None
+    railway_environment_id: str | None = None
     log_lines: int | None = None
     setup_command: list[str] = field(default_factory=list)
     backtest_command: list[str] = field(default_factory=list)
     backtest_env: dict[str, str] = field(default_factory=dict)
     test_command: list[str] = field(default_factory=list)
     runtime_status_files: list[str] = field(default_factory=list)
+    runtime_status_redis_keys: list[str] = field(default_factory=list)
     daily_review_files: list[str] = field(default_factory=list)
+    managed_railway_variables: list[str] = field(default_factory=list)
+    railway_variable_mappings: dict[str, str] = field(default_factory=dict)
     maturity: str = "research"
     compatible_review_redis_key: str | None = None
     overlay_redis_key: str | None = None

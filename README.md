@@ -4,7 +4,7 @@ Standalone assessment and gated improvement service for the trading bot fleet.
 
 The service implements phases 1 through 5 of the automation plan:
 
-1. Collect production context from Railway logs and current GitHub code.
+1. Collect production context from Railway deployment status, Railway logs, fallback runtime status sources, and current GitHub code.
 2. Build normalized daily review payloads for every configured bot.
 3. Publish bounded, parameter-only overlay payloads to Redis when explicitly enabled.
 4. Run a weekly PR-generating optimizer that creates candidate branches, runs tests, compares baseline/candidate backtests, and opens PRs.
@@ -19,7 +19,9 @@ For each bot in `assessor_config.example.json`, the assessor:
 - clones or updates the production GitHub repository
 - runs each bot's configured setup command, usually `pip install -r requirements.txt`
 - reads current git commit metadata
-- collects recent Railway logs using the Railway CLI
+- verifies the latest Railway deployment status when the Railway CLI can access the service
+- collects recent Railway logs using chunked Railway CLI calls when large windows are requested
+- falls back to configured runtime status files or Redis keys if Railway logs are unavailable
 - runs the configured rolling backtest / calibration command
 - parses errors, skipped signals, no-fills, stale data, missed opportunities, and backtest results
 - writes a normalized JSON daily review per bot
@@ -27,6 +29,7 @@ For each bot in `assessor_config.example.json`, the assessor:
 - publishes the combined report as a GitHub issue
 - sends a short Telegram message: `New daily report ready: <link>`
 - optionally publishes review and overlay JSON to Redis
+- prepares explicit, approval-required Railway variable change plans when a bot has allowlisted variables and mappings configured
 
 The weekly optimizer:
 
@@ -62,6 +65,8 @@ Optional Redis variables:
 - `BOT_ASSESSOR_PUBLISH_COMPAT_REVIEWS=true`: publish each normalized review to the bot's compatible review key
 - `BOT_ASSESSOR_APPLY_OVERLAYS=true`: publish safe overlay payloads to the configured overlay keys
 - `BOT_ASSESSOR_ALLOW_AUTO_MERGE=true`: allow phase 5 auto-merge for bots that also set `auto_merge_enabled=true`
+
+Railway variable changes are proposal-only by default. To make a variable eligible for future automation, add it to `managed_railway_variables` and map a specific overlay key such as `score_offset:global` in `railway_variable_mappings`. The daily report records proposed and blocked changes, but the assessor does not freely mutate Railway variables.
 
 Safety defaults:
 
@@ -118,6 +123,7 @@ Copy `assessor_config.example.json` to `assessor_config.json` if you need to cus
 - Futures bot
 - Forex bot
 - Gold bot
+- Indices bot
 - Commodities bot
 - Bonds bot
 
@@ -125,11 +131,18 @@ Each bot supports:
 
 - `github_repo`: source repository to clone/pull
 - `railway_service`: Railway service name for logs
+- `railway_project_id`: optional Railway project id used when a service name alone is not enough for the CLI
+- `railway_environment_id`: optional Railway environment id used instead of the environment name
 - `backtest_command`: command run inside the cloned repo
 - `setup_command`: optional dependency/setup command run before the backtest
 - `backtest_env`: per-command environment overrides
 - `compatible_review_redis_key`: optional normalized daily-review Redis key
 - `overlay_redis_key`: optional parameter-overlay Redis key
+- `runtime_status_files`: optional fallback files to read when Railway logs are unavailable
+- `daily_review_files`: optional fallback review files to read when Railway logs are unavailable
+- `runtime_status_redis_keys`: optional fallback Redis keys to read when Railway logs are unavailable
+- `managed_railway_variables`: strict allowlist of Railway variables the assessor may propose changing
+- `railway_variable_mappings`: mapping from overlay keys such as `threshold_adjustment:score_threshold` to managed Railway variables
 - `allow_parameter_overlays`: whether safe overlays may be published
 - `optimizer_enabled`: whether the weekly optimizer should consider the bot
 - `optimizer_command`: the bot-specific agent/script command that edits the candidate branch
@@ -139,7 +152,7 @@ Each bot supports:
 - `auto_merge_enabled`: per-bot phase 5 auto-merge gate
 - `auto_merge_allowed_file_patterns`: stricter file allowlist for phase 5 auto-merge
 
-The example config enables weekly optimizer consideration for Spot, Futures, Forex, and Gold, but leaves `optimizer_command` empty. Add a bot-specific command only after that bot has a deterministic patch generator or agent workflow. Commodities and Bonds remain assessment-only.
+The example config enables weekly optimizer consideration for Spot, Futures, Forex, Gold, and Indices, but leaves `optimizer_command` empty. Add a bot-specific command only after that bot has a deterministic patch generator or agent workflow. Commodities and Bonds remain assessment-only.
 
 ## Weekly Optimizer
 
@@ -165,4 +178,4 @@ Recommended rollout:
 pytest
 ```
 
-The tests cover log parsing, backtest parsing, recommendation generation, report rendering, GitHub/Telegram publishing behavior, Redis overlay safety, and the orchestrator dry-run path.
+The tests cover log parsing, Railway status/log collection, backtest parsing, recommendation generation, report rendering, GitHub/Telegram publishing behavior, Redis overlay safety, and the orchestrator dry-run path.

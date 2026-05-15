@@ -22,6 +22,8 @@ class FakeRunner:
             return CommandResult(list(command), str(cwd), 0, "Test commit\n", "")
         if command[:2] == ["git", "status"]:
             return CommandResult(list(command), str(cwd), 0, "", "")
+        if command[:3] == ["railway", "deployment", "list"]:
+            return CommandResult(list(command), str(cwd), 0, '[{"id":"dep_1","status":"SUCCESS","meta":{"commitHash":"def456789","branch":"main"}}]', "")
         if command[:2] == ["railway", "logs"]:
             return CommandResult(list(command), str(cwd), 0, "INFO trade_opened\n", "")
         return CommandResult(list(command), str(cwd), 0, '{"summary":{"total_trades":1,"total_pnl":3.5,"profit_factor":2.0}}', "")
@@ -58,3 +60,5 @@ def test_orchestrator_dry_run_writes_artifacts(tmp_path) -> None:
     assert Path(result.artifacts["markdown"]).exists()
     payload = json.loads(Path(result.artifacts["json"]).read_text(encoding="utf-8"))
     assert payload["reviews"][0]["backtest"]["total_pnl"] == 3.5
+    assert payload["reviews"][0]["production"]["railway"]["status"] == "SUCCESS"
+    assert payload["reviews"][0]["production"]["active_short_commit"] == "def4567"

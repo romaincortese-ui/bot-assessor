@@ -10,6 +10,9 @@ from bot_assessor.optimizer import WeeklyOptimizer
 from bot_assessor.orchestrator import BotAssessor
 
 
+EXPECTED_FLEET_BOTS = {"mexc_spot", "mexc_futures", "forex", "gold", "indices", "commodities", "bonds"}
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="bot-assessor")
     sub = parser.add_subparsers(dest="command")
@@ -39,7 +42,7 @@ def main(argv: list[str] | None = None) -> int:
     command = args.command or "run"
     if command == "validate-config":
         config = AssessorConfig.load(args.config)
-        print(json.dumps({"github_repo": config.github_repo, "bots": [bot.id for bot in config.bots]}, indent=2))
+        print(json.dumps({"github_repo": config.github_repo, "bots": [bot.id for bot in config.bots], "warnings": _config_warnings(config)}, indent=2))
         return 0
     if command == "optimize":
         config = AssessorConfig.load(args.config)
@@ -79,3 +82,19 @@ def main(argv: list[str] | None = None) -> int:
     if not result.github.ok or not result.telegram.ok or result.redis_errors:
         return 1
     return 0
+
+
+def _config_warnings(config: AssessorConfig) -> list[str]:
+    warnings: list[str] = []
+    configured = {bot.id for bot in config.bots}
+    missing = sorted(EXPECTED_FLEET_BOTS - configured)
+    if missing:
+        warnings.append(f"missing expected fleet bots: {', '.join(missing)}")
+    for bot in config.bots:
+        if bot.optimizer_enabled and not bot.optimizer_command:
+            warnings.append(f"{bot.id}: optimizer_enabled=true but optimizer_command is empty")
+        if bot.auto_merge_enabled and not bot.auto_merge_allowed_file_patterns:
+            warnings.append(f"{bot.id}: auto_merge_enabled=true but auto_merge_allowed_file_patterns is empty")
+        if bot.managed_railway_variables and not bot.railway_variable_mappings:
+            warnings.append(f"{bot.id}: managed_railway_variables configured without railway_variable_mappings")
+    return warnings

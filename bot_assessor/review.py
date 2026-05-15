@@ -33,9 +33,11 @@ class BotReview:
     production: dict[str, Any]
     health: dict[str, Any]
     logs: dict[str, Any]
+    runtime_status: dict[str, Any]
     backtest: dict[str, Any]
     recommendations: list[dict[str, Any]]
     parameter_overlays: list[dict[str, Any]] = field(default_factory=list)
+    railway_variable_plan: dict[str, Any] = field(default_factory=dict)
 
 
 def build_review(
@@ -48,8 +50,25 @@ def build_review(
     backtest: BacktestResult | None,
     recommendations: list[Recommendation],
     overlays: list[dict[str, Any]],
+    deployment_status: dict[str, Any] | None = None,
+    runtime_status: dict[str, Any] | None = None,
+    railway_variable_plan: dict[str, Any] | None = None,
 ) -> BotReview:
-    health_score = _health_score(logs, backtest)
+    health_score = _health_score(logs, backtest, deployment_status)
+    local_git = {
+        "repo": bot.github_repo,
+        "branch": git_info.branch,
+        "commit": git_info.commit,
+        "short_commit": git_info.short_commit,
+        "commit_message": git_info.message,
+        "dirty": git_info.dirty,
+    }
+    railway = deployment_status or {
+        "ok": False,
+        "service": bot.railway_service,
+        "environment": bot.railway_environment,
+        "error": "Railway deployment status was not collected",
+    }
     return BotReview(
         schema_version=SCHEMA_VERSION,
         bot_id=bot.id,
@@ -58,12 +77,12 @@ def build_review(
         window_hours=window_hours,
         maturity=bot.maturity,
         production={
-            "repo": bot.github_repo,
-            "branch": git_info.branch,
-            "commit": git_info.commit,
-            "short_commit": git_info.short_commit,
-            "commit_message": git_info.message,
-            "dirty": git_info.dirty,
+            **local_git,
+            "local_git": local_git,
+            "railway": railway,
+            "active_commit": railway.get("commit") or git_info.commit,
+            "active_short_commit": railway.get("short_commit") or git_info.short_commit,
+            "deployment_status": railway.get("status"),
             "railway_service": bot.railway_service,
             "railway_environment": bot.railway_environment,
         },
@@ -84,9 +103,11 @@ def build_review(
             "top_blockers": [{"reason": key, "count": count} for key, count in logs.top_blockers],
             "noteworthy_lines": logs.noteworthy_lines,
         },
+        runtime_status=runtime_status or {"ok": False, "sources": [], "payloads": {}, "errors": ["Runtime status was not collected"]},
         backtest=_backtest_payload(backtest),
         recommendations=[asdict(item) for item in recommendations],
         parameter_overlays=overlays,
+        railway_variable_plan=railway_variable_plan or {},
     )
 
 
@@ -112,11 +133,17 @@ def _backtest_payload(backtest: BacktestResult | None) -> dict[str, Any]:
     }
 
 
-def _health_score(logs: LogAnalysis, backtest: BacktestResult | None) -> int:
+def _health_score(logs: LogAnalysis, backtest: BacktestResult | None, deployment_status: dict[str, Any] | None = None) -> int:
     score = 100
     score -= min(35, logs.errors * 8)
     score -= min(15, logs.order_not_filled * 5)
     score -= min(15, logs.stale_data_hits * 3)
+    if deployment_status:
+        status = str(deployment_status.get("status") or "").lower()
+        if status in {"failed", "crashed", "removed", "stopped", "error"}:
+            score -= 35
+        elif deployment_status.get("ok") is False:
+            score -= 5
     if backtest is None or not backtest.ok:
         score -= 20
     elif backtest.total_pnl is not None and backtest.total_pnl < 0:

@@ -21,3 +21,16 @@ def test_analyze_logs_extracts_core_counts() -> None:
     assert result.stale_data_hits == 1
     assert len(result.missed_opportunities) == 1
     assert result.top_blockers == [("score_threshold", 1)]
+
+
+def test_analyze_logs_extracts_opportunity_skip_telemetry() -> None:
+    text = """
+    [OPPORTUNITY] symbol=XAU_USD skip_reason=no_signal filter_reasons=MACRO_BREAKOUT:no_breakout_direction,TREND_PULLBACK:trend_strength<1.0
+    """
+
+    result = analyze_logs(text)
+
+    assert len(result.missed_opportunities) == 1
+    assert result.missed_opportunities[0].symbol == "XAU_USD"
+    assert result.missed_opportunities[0].blocked_by == "no_signal"
+    assert result.top_blockers == [("no_signal", 1)]

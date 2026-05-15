@@ -38,14 +38,24 @@ class CommandRunner:
         merged_env = os.environ.copy()
         if env:
             merged_env.update({key: str(value) for key, value in env.items()})
-        completed = subprocess.run(
-            list(command),
-            cwd=str(cwd) if cwd is not None else None,
-            env=merged_env,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=timeout_seconds,
-            check=False,
-        )
-        return CommandResult(list(command), str(cwd) if cwd is not None else None, completed.returncode, completed.stdout, completed.stderr)
+        prepared = list(command)
+        working_dir = str(cwd) if cwd is not None else None
+        try:
+            completed = subprocess.run(
+                prepared,
+                cwd=working_dir,
+                env=merged_env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=timeout_seconds,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            stdout = exc.stdout if isinstance(exc.stdout, str) else (exc.stdout or b"").decode(errors="replace")
+            stderr = exc.stderr if isinstance(exc.stderr, str) else (exc.stderr or b"").decode(errors="replace")
+            message = f"Command timed out after {timeout_seconds}s"
+            return CommandResult(prepared, working_dir, 124, stdout or "", "\n".join(part for part in [stderr, message] if part))
+        except FileNotFoundError as exc:
+            return CommandResult(prepared, working_dir, 127, "", str(exc))
+        return CommandResult(prepared, working_dir, completed.returncode, completed.stdout, completed.stderr)

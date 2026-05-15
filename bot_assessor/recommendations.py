@@ -38,14 +38,14 @@ def build_recommendations(bot: BotConfig, logs: LogAnalysis, backtest: BacktestR
     if logs.top_blockers:
         blocker, count = logs.top_blockers[0]
         overlay = None
-        if bot.allow_parameter_overlays and "threshold" in blocker.lower():
-            overlay = {"type": "threshold_adjustment", "target": blocker, "direction": "review", "max_step": 0.05}
+        if bot.allow_parameter_overlays and ("threshold" in blocker.lower() or "score" in blocker.lower()):
+            overlay = {"type": "threshold_adjustment", "target": blocker, "direction": _threshold_direction(backtest), "max_step": 0.05}
         recommendations.append(
             Recommendation(
                 severity="medium",
                 title="Review top missed-opportunity blocker",
                 rationale=f"Top blocker was {blocker!r} across {count} missed-opportunity records.",
-                action="Compare this gate against the backtest before relaxing it.",
+                action=f"Backtest a {overlay['direction'] if overlay else 'targeted'} adjustment for this gate before changing live risk.",
                 overlay=overlay,
             )
         )
@@ -76,3 +76,9 @@ def build_recommendations(bot: BotConfig, logs: LogAnalysis, backtest: BacktestR
     if not recommendations:
         recommendations.append(Recommendation("info", "No urgent action", "Logs and backtest did not surface a critical issue.", "Keep collecting daily reviews and wait for enough sample size before tuning."))
     return recommendations
+
+
+def _threshold_direction(backtest: BacktestResult | None) -> str:
+    if backtest is not None and backtest.ok and backtest.total_pnl is not None and backtest.total_pnl < 0:
+        return "raise"
+    return "lower"
