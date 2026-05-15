@@ -3,7 +3,7 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "bot-assessor run"
-cronSchedule = "0 6 * * *"
+startCommand = "bot-assessor scheduled"
+cronSchedule = "0 */6 * * *"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 2

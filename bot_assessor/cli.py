@@ -8,6 +8,7 @@ from bot_assessor.config import AssessorConfig, RuntimeOptions
 from bot_assessor.heartbeat import send_fleet_heartbeat
 from bot_assessor.optimizer import WeeklyOptimizer
 from bot_assessor.orchestrator import BotAssessor
+from bot_assessor.scheduler import scheduled_actions
 
 
 EXPECTED_FLEET_BOTS = {"mexc_spot", "mexc_futures", "forex", "gold", "indices", "commodities", "bonds"}
@@ -31,6 +32,9 @@ def build_parser() -> argparse.ArgumentParser:
     heartbeat = sub.add_parser("heartbeat", help="Send the 6-hour fleet Telegram heartbeat")
     heartbeat.add_argument("--dry-run", action="store_true")
     heartbeat.add_argument("--force", action="store_true")
+    scheduled = sub.add_parser("scheduled", help="Run the Railway 6-hour scheduler")
+    scheduled.add_argument("--config", default=None)
+    scheduled.add_argument("--dry-run", action="store_true")
     validate = sub.add_parser("validate-config", help="Load and print config summary")
     validate.add_argument("--config", default=None)
     return parser
@@ -75,6 +79,28 @@ def main(argv: list[str] | None = None) -> int:
         result = send_fleet_heartbeat(dry_run=args.dry_run, force=args.force)
         print(json.dumps({"telegram": asdict(result)}, indent=2, default=str))
         return 0 if result.ok else 1
+    if command == "scheduled":
+        config = AssessorConfig.load(args.config)
+        options = RuntimeOptions.from_env(dry_run=args.dry_run)
+        actions = scheduled_actions()
+        heartbeat_result = send_fleet_heartbeat(dry_run=options.dry_run, force=True)
+        assessment = None
+        optimizer = None
+        if actions.daily_assessment:
+            assessment = BotAssessor(config, options).run()
+        if actions.weekly_optimizer:
+            optimizer = WeeklyOptimizer(config, options).run()
+        payload = {
+            "actions": asdict(actions),
+            "heartbeat": asdict(heartbeat_result),
+            "assessment": asdict(assessment) if assessment else None,
+            "optimizer": asdict(optimizer) if optimizer else None,
+        }
+        print(json.dumps(payload, indent=2, default=str))
+        failed_optimizer_results = [item for item in (optimizer.results if optimizer else []) if item.status == "failed"]
+        if not heartbeat_result.ok or (assessment and (not assessment.github.ok or not assessment.telegram.ok or assessment.redis_errors)) or failed_optimizer_results:
+            return 1
+        return 0
     config = AssessorConfig.load(args.config)
     options = RuntimeOptions.from_env(dry_run=args.dry_run, skip_backtests=args.skip_backtests, skip_logs=args.skip_logs)
     result = BotAssessor(config, options).run()

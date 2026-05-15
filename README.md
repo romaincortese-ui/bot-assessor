@@ -97,17 +97,19 @@ The `heartbeat` command builds one concise fleet Telegram message from Redis/run
 
 ## Railway Deployment
 
-This repo includes a Dockerfile that installs Python, Git, Node, and `@railway/cli`, then runs:
+This repo includes a Dockerfile that installs Python, Git, Node, and `@railway/cli`, then runs the Railway scheduler:
 
 ```bash
-bot-assessor run
+bot-assessor scheduled
 ```
 
-`railway.toml` schedules it daily at `06:00 UTC`:
+`railway.toml` schedules it every 6 hours:
 
 ```toml
-cronSchedule = "0 6 * * *"
+cronSchedule = "0 */6 * * *"
 ```
+
+Each scheduled Railway run sends the fleet heartbeat. The 06:00 UTC run also performs the daily assessment, and the Monday 06:00 UTC run also executes the weekly optimizer. These can be tuned with `BOT_ASSESSOR_DAILY_UTC_HOUR`, `BOT_ASSESSOR_WEEKLY_UTC_DAY`, `BOT_ASSESSOR_RUN_DAILY_ASSESSMENT`, and `BOT_ASSESSOR_RUN_WEEKLY_OPTIMIZER`.
 
 This repo also includes GitHub Actions workflows:
 
