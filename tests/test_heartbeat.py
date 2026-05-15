@@ -41,7 +41,7 @@ def test_metrics_from_payload_extracts_and_computes_values() -> None:
 
     metrics = metrics_from_payload(source, payload, source_ref="test")
 
-    assert metrics.pnl_pct == 5.0 / 60.0 * 100.0
+    assert metrics.pnl_pct == 5.0
     assert metrics.pnl_amount == 5.0
     assert metrics.available_balance == 100.0
     assert metrics.allocated_balance == 60.0
@@ -52,7 +52,47 @@ def test_build_heartbeat_message_is_clear_and_concise() -> None:
     message = build_heartbeat_message([BotMetrics(source, pnl_pct=2.0, pnl_amount=5.0, available_balance=100.0, allocated_balance=60.0)])
 
     assert "💓 Fleet Heartbeat" in message
-    assert "🏦 Bonds bot: P&L +2.00%, +£5.00 | Av.Balance: £100.00 | Allocated: £60.00" in message
+    assert "🏦 Bonds bot: no live metrics published yet" in message
+
+
+def test_build_heartbeat_message_uses_metrics_when_source_exists() -> None:
+    source = HeartbeatSource("bonds", "Bonds bot", "🏦", "£")
+    message = build_heartbeat_message([BotMetrics(source, pnl_pct=2.0, pnl_amount=5.0, available_balance=100.0, allocated_balance=60.0, total_trades=4, profit_factor=1.7, state="running", source_ref="redis:bonds")])
+
+    assert "🏦 Bonds bot: P&L +2.00%, +£5.00 | PF 1.70 | Trades 4 | Balance £100.00 | Allocated £60.00 | running" in message
+
+
+def test_build_heartbeat_message_omits_missing_pnl_side() -> None:
+    source = HeartbeatSource("mexc_spot", "MEXC Spot bot", "🟢", "$")
+    message = build_heartbeat_message([BotMetrics(source, pnl_amount=0.0, total_trades=0, profit_factor=0, source_ref="redis:mexc_daily_review")])
+
+    assert "🟢 MEXC Spot bot: P&L +$0.00 | PF 0.00 | Trades 0" in message
+    assert "P&L n/a, +$0.00" not in message
+
+
+def test_metrics_from_daily_review_payload_extracts_review_values() -> None:
+    source = HeartbeatSource("mexc_spot", "MEXC Spot bot", "🟢", "$")
+    payload = {"total_trades": 12, "overview": {"total_pnl": 18.4, "profit_factor": 1.9}}
+
+    metrics = metrics_from_payload(source, payload, source_ref="redis:mexc_daily_review")
+
+    assert metrics.pnl_amount == 18.4
+    assert metrics.total_trades == 12
+    assert metrics.profit_factor == 1.9
+    assert metrics.source_ref == "redis:mexc_daily_review"
+
+
+def test_metrics_from_account_payload_extracts_account_values() -> None:
+    source = HeartbeatSource("gold", "Gold bot", "🥇", "£")
+    payload = {"state": "running", "account_balance": 1000.0, "account_margin_used": 40.0, "account_unrealized_pl": -2.5}
+
+    metrics = metrics_from_payload(source, payload, source_ref="redis:gold_runtime_state")
+
+    assert metrics.pnl_amount == -2.5
+    assert metrics.pnl_pct == -0.25
+    assert metrics.available_balance == 1000.0
+    assert metrics.allocated_balance == 40.0
+    assert metrics.state == "running"
 
 
 def test_send_fleet_heartbeat_respects_interval(monkeypatch) -> None:

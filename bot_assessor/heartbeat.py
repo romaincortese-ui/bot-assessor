@@ -31,15 +31,18 @@ class BotMetrics:
     pnl_amount: float | None = None
     available_balance: float | None = None
     allocated_balance: float | None = None
+    total_trades: float | None = None
+    profit_factor: float | None = None
+    state: str | None = None
     source_ref: str | None = None
 
 
 DEFAULT_SOURCES = [
-    HeartbeatSource("bonds", "Bonds bot", "🏦", "£", ["bonds_runtime_state", "bot_assessor:bonds:runtime_state", "bot_assessor:bonds:daily_review"]),
+    HeartbeatSource("bonds", "Bonds bot", "🏦", "£", ["bonds_runtime_state", "bonds_bot_runtime_status", "bot_assessor:bonds:runtime_state", "bot_assessor:bonds:daily_review"]),
     HeartbeatSource("gold", "Gold bot", "🥇", "£", ["gold_bot_runtime_status", "gold_runtime_state", "bot_assessor:gold:daily_review"]),
     HeartbeatSource("forex", "FX bot", "💱", "£", ["bot_runtime_status", "fx_bot_runtime_status", "forex_bot_runtime_status", "bot_assessor:forex:daily_review"]),
     HeartbeatSource("futures", "Futures bot", "📈", "$", ["futures_runtime_status", "mexc_futures_runtime_state", "bot_assessor:mexc_futures:daily_review", "mexc_futures_daily_review"]),
-    HeartbeatSource("commodities", "Commodities bot", "🌾", "£", ["commodities_runtime_state", "bot_assessor:commodities:runtime_state", "bot_assessor:commodities:daily_review"]),
+    HeartbeatSource("commodities", "Commodities bot", "🌾", "£", ["commodities_runtime_state", "commodities_bot_runtime_status", "bot_assessor:commodities:runtime_state", "bot_assessor:commodities:daily_review"]),
     HeartbeatSource("mexc_spot", "MEXC Spot bot", "🟢", "$", ["mexc_bot_runtime_status", "mexc_runtime_state", "bot_assessor:mexc_spot:daily_review", "mexc_daily_review"]),
     HeartbeatSource("indices", "Indices bot", "📊", "£", ["indices_runtime_state", "indices_bot_runtime_status", "bot_assessor:indices:daily_review"]),
 ]
@@ -71,7 +74,7 @@ def load_sources() -> list[HeartbeatSource]:
 
 class MetricsReader:
     def __init__(self, *, redis_url: str | None = None) -> None:
-        self.redis_url = redis_url or os.getenv("REDIS_URL", "").strip()
+        self.redis_url = redis_url or os.getenv("REDIS_URL", "").strip() or os.getenv("REDIS_PUBLIC_URL", "").strip()
 
     def read_source(self, source: HeartbeatSource) -> BotMetrics:
         for key in source.redis_keys:
@@ -141,20 +144,35 @@ class MetricsReader:
 
 def metrics_from_payload(source: HeartbeatSource, payload: dict[str, Any], *, source_ref: str | None = None) -> BotMetrics:
     flattened = list(_walk_dicts(payload, descend_lists=False))
-    pnl_amount = _first_number(flattened, ["session_pnl_amount", "total_pnl_amount", "total_pnl", "pnl", "daily_pnl", "unrealized_pl", "unrealizedPL"])
+    pnl_amount = _first_number(flattened, ["session_pnl_amount", "total_pnl_amount", "total_pnl", "pnl", "daily_pnl", "unrealized_pl", "unrealizedPL", "account_unrealized_pl"])
     pnl_pct = _first_number(flattened, ["session_pnl_pct", "total_pnl_pct", "pnl_pct", "return_pct", "daily_pnl_pct", "unrealized_pnl_pct"])
-    available = _first_number(flattened, ["available_balance", "available", "margin_available", "marginAvailable", "free_balance", "cash", "balance_available"])
-    allocated = _first_number(flattened, ["allocated_balance", "allocated", "margin_used", "marginUsed", "used_margin", "open_margin", "total_open_margin", "risk_allocated"])
+    available = _first_number(flattened, ["available_balance", "available", "margin_available", "marginAvailable", "account_margin_available", "free_balance", "cash", "balance_available", "account_balance", "balance", "account_nav", "nav", "NAV", "equity"])
+    allocated = _first_number(flattened, ["allocated_balance", "allocated", "margin_used", "marginUsed", "account_margin_used", "used_margin", "open_margin", "total_open_margin", "risk_allocated"])
+    total_trades = _first_number(flattened, ["total_trades", "trade_count", "trades_count", "closed_trades"])
+    profit_factor = _first_number(flattened, ["profit_factor", "pf"])
+    state = _first_text(flattened, ["state", "status", "service"])
     open_rows = _first_list(payload, ["open_positions", "open_trades", "positions", "trades"])
+    if total_trades is None and open_rows:
+        total_trades = float(len(open_rows))
     if allocated is None and open_rows:
         allocated = _sum_position_values(open_rows, ["entry_budget", "allocated", "margin_used", "marginUsed", "initial_margin_required", "initialMarginRequired", "risk_amount", "current_value"])
     if pnl_amount is None and open_rows:
         pnl_amount = _sum_position_values(open_rows, ["unrealized_pl", "unrealizedPL", "pnl", "profit_loss"])
     if pnl_pct is None and pnl_amount is not None:
-        base = allocated or available or _first_number(flattened, ["equity", "nav", "NAV", "balance"])
+        base = available or _first_number(flattened, ["equity", "nav", "NAV", "balance", "account_nav", "account_balance"]) or allocated
         if base and base > 0:
             pnl_pct = pnl_amount / base * 100.0
-    return BotMetrics(source=source, pnl_pct=pnl_pct, pnl_amount=pnl_amount, available_balance=available, allocated_balance=allocated, source_ref=source_ref)
+    return BotMetrics(
+        source=source,
+        pnl_pct=pnl_pct,
+        pnl_amount=pnl_amount,
+        available_balance=available,
+        allocated_balance=allocated,
+        total_trades=total_trades,
+        profit_factor=profit_factor,
+        state=state,
+        source_ref=source_ref,
+    )
 
 
 def build_heartbeat_message(metrics: list[BotMetrics], *, generated_at: datetime | None = None) -> str:
@@ -165,12 +183,19 @@ def build_heartbeat_message(metrics: list[BotMetrics], *, generated_at: datetime
     ]
     for item in metrics:
         currency = item.source.currency
-        lines.append(
-            f"{item.source.emoji} {item.source.label}: "
-            f"P&L {_format_pct(item.pnl_pct)}, {_format_signed_money(item.pnl_amount, currency)} | "
-            f"Av.Balance: {_format_money(item.available_balance, currency)} | "
-            f"Allocated: {_format_money(item.allocated_balance, currency)}"
-        )
+        if not item.source_ref:
+            lines.append(f"{item.source.emoji} {item.source.label}: no live metrics published yet")
+            continue
+        parts = [f"P&L {_format_pnl(item.pnl_pct, item.pnl_amount, currency)}"]
+        if item.profit_factor is not None:
+            parts.append(f"PF {_format_decimal(item.profit_factor)}")
+        if item.total_trades is not None:
+            parts.append(f"Trades {_format_count(item.total_trades)}")
+        parts.append(f"Balance {_format_money(item.available_balance, currency)}")
+        parts.append(f"Allocated {_format_money(item.allocated_balance, currency)}")
+        if item.state:
+            parts.append(str(item.state))
+        lines.append(f"{item.source.emoji} {item.source.label}: " + " | ".join(parts))
     return "\n".join(lines)
 
 
@@ -197,6 +222,9 @@ def metric_to_dict(item: BotMetrics) -> dict[str, Any]:
         "pnl_amount": item.pnl_amount,
         "available_balance": item.available_balance,
         "allocated_balance": item.allocated_balance,
+        "total_trades": item.total_trades,
+        "profit_factor": item.profit_factor,
+        "state": item.state,
         "source_ref": item.source_ref,
     }
 
@@ -219,6 +247,18 @@ def _first_number(dicts: list[dict[str, Any]], keys: list[str]) -> float | None:
             value = _float_or_none(mapping.get(key))
             if value is not None:
                 return value
+    return None
+
+
+def _first_text(dicts: list[dict[str, Any]], keys: list[str]) -> str | None:
+    for mapping in dicts:
+        for key in keys:
+            value = mapping.get(key)
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                return text
     return None
 
 
@@ -286,3 +326,27 @@ def _format_signed_money(value: float | None, currency: str) -> str:
         return "n/a"
     sign = "+" if value >= 0 else "-"
     return f"{sign}{currency}{abs(value):,.2f}"
+
+
+def _format_pnl(pct: float | None, amount: float | None, currency: str) -> str:
+    if pct is not None and amount is not None:
+        return f"{_format_pct(pct)}, {_format_signed_money(amount, currency)}"
+    if amount is not None:
+        return _format_signed_money(amount, currency)
+    if pct is not None:
+        return _format_pct(pct)
+    return "n/a"
+
+
+def _format_decimal(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.2f}"
+
+
+def _format_count(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    if float(value).is_integer():
+        return str(int(value))
+    return f"{value:.2f}"
