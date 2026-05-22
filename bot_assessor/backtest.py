@@ -74,29 +74,40 @@ class BacktestRunner:
 
 
 def parse_backtest_output(text: str) -> dict[str, Any]:
-    payload = _parse_json_payload(text)
-    if isinstance(payload, dict):
+    for payload in reversed(_parse_json_payloads(text)):
+        if not isinstance(payload, dict):
+            continue
         summary = _find_summary(payload)
-        return _metrics_from_summary(summary)
+        metrics = _metrics_from_summary(summary)
+        if _has_any_metric(metrics):
+            return metrics
     return _metrics_from_text(text)
 
 
-def _parse_json_payload(text: str) -> Any:
+def _parse_json_payloads(text: str) -> list[Any]:
     stripped = text.strip()
     if not stripped:
-        return None
+        return []
     try:
-        return json.loads(stripped)
+        return [json.loads(stripped)]
     except json.JSONDecodeError:
         pass
-    first = stripped.find("{")
-    last = stripped.rfind("}")
-    if first >= 0 and last > first:
+
+    decoder = json.JSONDecoder()
+    payloads: list[Any] = []
+    index = 0
+    while index < len(stripped):
+        start = stripped.find("{", index)
+        if start < 0:
+            break
         try:
-            return json.loads(stripped[first : last + 1])
+            payload, offset = decoder.raw_decode(stripped[start:])
         except json.JSONDecodeError:
-            return None
-    return None
+            index = start + 1
+            continue
+        payloads.append(payload)
+        index = start + offset
+    return payloads
 
 
 def _find_summary(payload: dict[str, Any]) -> dict[str, Any]:
@@ -104,21 +115,40 @@ def _find_summary(payload: dict[str, Any]) -> dict[str, Any]:
         return payload["summary"]
     if isinstance(payload.get("report"), dict):
         return payload["report"]
+    if isinstance(payload.get("portfolio_summary"), dict):
+        return payload["portfolio_summary"]
     if isinstance(payload.get("calibration"), dict) and isinstance(payload["calibration"].get("report"), dict):
         return payload["calibration"]["report"]
+    if isinstance(payload.get("calibration"), dict) and _has_metric_field(payload["calibration"]):
+        return payload["calibration"]
     return payload
+
+
+def _has_any_metric(metrics: dict[str, Any]) -> bool:
+    return any(metrics.get(key) is not None for key in ("total_trades", "total_pnl", "return_pct", "profit_factor", "win_rate", "max_drawdown"))
+
+
+def _has_metric_field(payload: dict[str, Any]) -> bool:
+    return any(key in payload for key in ("total_trades", "trades", "total_pnl", "pnl", "return_pct", "total_return_pct", "profit_factor", "win_rate", "max_drawdown", "max_drawdown_pct"))
 
 
 def _metrics_from_summary(summary: dict[str, Any]) -> dict[str, Any]:
     return {
         "summary": summary,
-        "total_trades": _as_int(summary.get("total_trades") or summary.get("trades")),
-        "total_pnl": _as_float(summary.get("total_pnl") or summary.get("pnl")),
-        "return_pct": _as_float(summary.get("return_pct") or summary.get("total_return_pct")),
+        "total_trades": _as_int(_first_present(summary, "total_trades", "trades")),
+        "total_pnl": _as_float(_first_present(summary, "total_pnl", "pnl")),
+        "return_pct": _as_float(_first_present(summary, "return_pct", "total_return_pct")),
         "profit_factor": _as_float(summary.get("profit_factor")),
         "win_rate": _as_float(summary.get("win_rate")),
-        "max_drawdown": _as_float(summary.get("max_drawdown") or summary.get("max_drawdown_pct")),
+        "max_drawdown": _as_float(_first_present(summary, "max_drawdown", "max_drawdown_pct")),
     }
+
+
+def _first_present(mapping: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in mapping and mapping[key] is not None:
+            return mapping[key]
+    return None
 
 
 def _metrics_from_text(text: str) -> dict[str, Any]:

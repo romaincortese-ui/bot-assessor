@@ -55,9 +55,23 @@ class RepositoryManager:
     def create_candidate_branch(self, bot: BotConfig, repo_path: str | Path, *, generated_at: datetime) -> str:
         path = Path(repo_path)
         branch = f"{bot.optimizer_branch_prefix}/{bot.id}/{generated_at.strftime('%Y%m%d-%H%M%S')}"
-        self.runner.run(["git", "fetch", "origin", bot.default_branch], cwd=path, timeout_seconds=300)
-        self.runner.run(["git", "checkout", bot.default_branch], cwd=path, timeout_seconds=120)
-        self.runner.run(["git", "pull", "--ff-only", "origin", bot.default_branch], cwd=path, timeout_seconds=300)
+        fetch = self.runner.run(["git", "fetch", "origin", bot.default_branch], cwd=path, timeout_seconds=300)
+        if not fetch.ok:
+            raise RuntimeError(f"git fetch failed for {bot.id}: {fetch.stderr or fetch.stdout}")
+        checkout = self.runner.run(["git", "checkout", bot.default_branch], cwd=path, timeout_seconds=120)
+        if not checkout.ok:
+            raise RuntimeError(f"git checkout failed for {bot.id}: {checkout.stderr or checkout.stdout}")
+        if bot.repo_path:
+            pull = self.runner.run(["git", "pull", "--ff-only", "origin", bot.default_branch], cwd=path, timeout_seconds=300)
+            if not pull.ok:
+                raise RuntimeError(f"git pull failed for {bot.id}: {pull.stderr or pull.stdout}")
+        else:
+            reset = self.runner.run(["git", "reset", "--hard", f"origin/{bot.default_branch}"], cwd=path, timeout_seconds=300)
+            if not reset.ok:
+                raise RuntimeError(f"git reset failed for {bot.id}: {reset.stderr or reset.stdout}")
+            clean = self.runner.run(["git", "clean", "-fd"], cwd=path, timeout_seconds=300)
+            if not clean.ok:
+                raise RuntimeError(f"git clean failed for {bot.id}: {clean.stderr or clean.stdout}")
         result = self.runner.run(["git", "checkout", "-B", branch], cwd=path, timeout_seconds=120)
         if not result.ok:
             raise RuntimeError(f"git branch creation failed for {bot.id}: {result.stderr or result.stdout}")

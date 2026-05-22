@@ -37,9 +37,9 @@ The weekly optimizer:
 - runs the configured deterministic `candidate_generator`, or the configured `optimizer_command`, inside the bot repo
 - runs full tests when `test_command` is configured
 - runs baseline and candidate backtests across configured scenarios
-- enforces guardrails such as minimum trades, PnL improvement, return quality, profit-factor quality, trade-count retention, and drawdown limits
+- enforces guardrails such as minimum trades, strict PnL improvement, available return quality, profit-factor quality, trade-count retention, and drawdown limits
 - opens a GitHub PR in the bot repo with the report in the PR body
-- optionally auto-merges only when `BOT_ASSESSOR_ALLOW_AUTO_MERGE=true`, `auto_merge_enabled=true`, guardrails pass, and every changed file matches `auto_merge_allowed_file_patterns`
+- auto-merges only when `BOT_ASSESSOR_ALLOW_AUTO_MERGE=true`, `auto_merge_enabled=true`, guardrails pass, and every changed file matches exact `auto_merge_allowed_file_patterns`
 
 The daily assessment now also builds a portfolio-manager view for each bot:
 
@@ -71,7 +71,7 @@ Optional Redis variables:
 - `REDIS_URL`: Redis connection string from the shared Redis project
 - `BOT_ASSESSOR_PUBLISH_COMPAT_REVIEWS=true`: publish each normalized review to the bot's compatible review key
 - `BOT_ASSESSOR_APPLY_OVERLAYS=true`: publish safe overlay payloads to the configured overlay keys
-- `BOT_ASSESSOR_ALLOW_AUTO_MERGE=true`: allow phase 5 auto-merge for bots that also set `auto_merge_enabled=true`
+- `BOT_ASSESSOR_ALLOW_AUTO_MERGE=true`: allow phase 5 auto-merge for bots that also set `auto_merge_enabled=true` and exact file allowlists
 
 Railway variable changes are proposal-only by default. To make a variable eligible for future automation, add it to `managed_railway_variables` and map a specific overlay key such as `score_offset:global` in `railway_variable_mappings`. The daily report records proposed and blocked changes, but the assessor does not freely mutate Railway variables.
 
@@ -82,8 +82,8 @@ Safety defaults:
 - Redis publishing is skipped unless `REDIS_URL` exists.
 - Overlay publishing is skipped unless `BOT_ASSESSOR_APPLY_OVERLAYS=true`.
 - Commodities and Bonds have overlays disabled in config; their weekly improvements run through PR/backtest gates.
-- Weekly auto-merge is skipped unless both the global variable and per-bot config allow it.
-- Forex, Gold, Commodities, Bonds, and Indices are configured for manual PR approval only.
+- Weekly auto-merge is skipped unless both the global variable and per-bot exact file allowlists allow it.
+- All optimizer-enabled bots are configured for hands-off merge only for deterministic generator files.
 
 ## Local Run
 
@@ -161,7 +161,9 @@ Each bot supports:
 - `auto_merge_enabled`: per-bot phase 5 auto-merge gate
 - `auto_merge_allowed_file_patterns`: stricter file allowlist for phase 5 auto-merge
 
-The example config enables built-in deterministic generators for Spot, Futures, Forex, Gold, Indices, Commodities, and Bonds. Commodities and Bonds start PR-only with overlays and auto-merge disabled while their live track record builds.
+The example config enables built-in deterministic generators for Spot, Futures, Forex, Gold, Indices, Commodities, and Bonds. Auto-merge is constrained to the exact files each generator is allowed to touch plus its audit file.
+
+Guardrail-only candidate failures are reported as `rejected_by_guardrails`: no PR is opened, nothing is merged, and the scheduled run can continue. Test failures, dependency/setup failures, failed backtests, dirty baseline runs, and publishing failures remain `failed` so automation problems still surface.
 
 ## Weekly Optimizer
 
@@ -175,8 +177,8 @@ Recommended rollout:
 1. Start with the built-in `candidate_generator` for one mature bot, or add a narrow `optimizer_command` for a bot that needs a custom generator.
 2. Run `optimize --dry-run --bot <id>` until the generated patch, tests, and backtests look sane.
 3. Run without dry-run to open manual-review PRs.
-4. Require the candidate to beat baseline PnL while preserving return quality, profit factor, drawdown, and enough trade sample size across every configured window.
-5. Only after several clean weekly PRs, set `BOT_ASSESSOR_ALLOW_AUTO_MERGE=true` and keep auto-merge limited to JSON/config/calibration files.
+4. Require the candidate to strictly beat baseline PnL while preserving every quality metric emitted by that bot's backtest, plus drawdown and enough trade sample size across every configured window.
+5. Keep `BOT_ASSESSOR_ALLOW_AUTO_MERGE=true` only when every bot has GitHub Actions and Railway waits for CI before deploying merged `main` changes.
 
 Candidate-generation guidance:
 

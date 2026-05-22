@@ -39,6 +39,16 @@ class OptimizerRunner:
         return CommandResult(command, str(cwd), 0, "ok", "")
 
 
+class FailingBacktestRunner(OptimizerRunner):
+    def run(self, command, *, cwd=None, env=None, timeout_seconds=900):
+        command = list(command)
+        if command == ["python", "bt.py"]:
+            self.commands.append(command)
+            self.backtest_calls += 1
+            return CommandResult(command, str(cwd), 1, "", "backtest exploded")
+        return super().run(command, cwd=cwd, env=env, timeout_seconds=timeout_seconds)
+
+
 class StubPRs:
     def __init__(self) -> None:
         self.created = []
@@ -172,8 +182,40 @@ def test_guardrails_fail_when_candidate_does_not_improve(tmp_path: Path) -> None
         summary_publisher=StubSummary(),
     ).run()
 
-    assert result.results[0].status == "failed"
+    assert result.results[0].status == "rejected_by_guardrails"
     assert any("did not beat baseline" in reason for reason in result.results[0].guardrails.reasons)
+
+
+def test_guardrails_reject_equal_candidate_pnl(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+
+    result = WeeklyOptimizer(
+        _config(tmp_path, _bot(repo)),
+        RuntimeOptions(),
+        runner=OptimizerRunner(candidate_output="trades=12 pnl=10.00 pf=1.50 max_dd=-3.00%"),
+        pr_publisher=StubPRs(),
+        summary_publisher=StubSummary(),
+    ).run()
+
+    assert result.results[0].status == "rejected_by_guardrails"
+    assert any("did not beat baseline" in reason for reason in result.results[0].guardrails.reasons)
+
+
+def test_backtest_execution_failure_remains_failed(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+
+    result = WeeklyOptimizer(
+        _config(tmp_path, _bot(repo)),
+        RuntimeOptions(),
+        runner=FailingBacktestRunner(),
+        pr_publisher=StubPRs(),
+        summary_publisher=StubSummary(),
+    ).run()
+
+    assert result.results[0].status == "failed"
+    assert any("backtest failed" in reason for reason in result.results[0].guardrails.reasons)
 
 
 def test_weekly_optimizer_requires_pr_file_allowlist(tmp_path: Path) -> None:
@@ -206,5 +248,5 @@ def test_guardrails_can_require_return_and_trade_count_quality(tmp_path: Path) -
 
     result = WeeklyOptimizer(_config(tmp_path, bot), RuntimeOptions(), runner=runner, pr_publisher=StubPRs(), summary_publisher=StubSummary()).run()
 
-    assert result.results[0].status == "failed"
+    assert result.results[0].status == "rejected_by_guardrails"
     assert any("trade count dropped" in reason for reason in result.results[0].guardrails.reasons)

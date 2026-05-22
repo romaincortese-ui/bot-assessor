@@ -25,6 +25,34 @@ def test_parse_json_summary_backtest_output() -> None:
     assert parsed["max_drawdown"] == -0.02
 
 
+def test_parse_json_summary_preserves_zero_metrics() -> None:
+    parsed = parse_backtest_output('{"report":{"total_trades":0,"total_pnl":0.0,"return_pct":0.0,"profit_factor":0.0,"win_rate":0.0,"max_drawdown":0.0}}')
+
+    assert parsed["total_trades"] == 0
+    assert parsed["total_pnl"] == 0.0
+    assert parsed["return_pct"] == 0.0
+    assert parsed["profit_factor"] == 0.0
+    assert parsed["win_rate"] == 0.0
+    assert parsed["max_drawdown"] == 0.0
+
+
+def test_parse_last_metric_bearing_json_object() -> None:
+    output = '\n'.join(
+        [
+            '{"backtest_run":{"total_trades":99}}',
+            '{"signal_summary":{"best_signals":[]}}',
+            '{"total_trades":4,"total_pnl":8.5,"profit_factor":2.0,"win_rate":0.75,"max_drawdown":-0.01}',
+        ]
+    )
+
+    parsed = parse_backtest_output(output)
+
+    assert parsed["total_trades"] == 4
+    assert parsed["total_pnl"] == 8.5
+    assert parsed["profit_factor"] == 2.0
+    assert parsed["max_drawdown"] == -0.01
+
+
 def test_parse_text_backtest_output() -> None:
     parsed = parse_backtest_output("trades=3 wins=2 losses=1 win_rate=66.67%\npnl=4.20 return=1.40% pf=2.10 max_dd=-3.00%")
 

@@ -156,7 +156,8 @@ class WeeklyOptimizer:
         candidate = {} if self.options.skip_backtests else self._run_backtest_scenarios(bot, scenarios, repo_path)
         guardrails = evaluate_guardrails(bot, baseline, candidate, tests, skip_backtests=self.options.skip_backtests)
         if not guardrails.passed:
-            return self._result(bot, "failed", branch, changed_files, optimizer, tests, empty_pr, empty_pr, baseline, candidate, guardrails.reasons, guardrails)
+            status = "failed" if _guardrail_execution_failed(tests, baseline, candidate) else "rejected_by_guardrails"
+            return self._result(bot, status, branch, changed_files, optimizer, tests, empty_pr, empty_pr, baseline, candidate, guardrails.reasons, guardrails)
         post_check_changed_files = self.repositories.changed_files(repo_path)
         if sorted(post_check_changed_files) != sorted(changed_files):
             error = f"tests or candidate backtests modified the working tree: {', '.join(post_check_changed_files)}"
@@ -321,7 +322,7 @@ def _evaluate_scenario(name: str, baseline: BacktestResult | None, candidate: Ba
         min_delta = float(guardrails.get("min_total_pnl_delta", 0.0))
         if baseline.total_pnl is None or candidate.total_pnl is None:
             reasons.append(f"{name}: pnl metric missing")
-        elif candidate.total_pnl < baseline.total_pnl + min_delta:
+        elif candidate.total_pnl <= baseline.total_pnl + min_delta:
             reasons.append(f"{name}: candidate pnl {candidate.total_pnl:.4f} did not beat baseline {baseline.total_pnl:.4f}")
     if guardrails.get("require_profit_factor_not_worse", False):
         min_pf_delta = float(guardrails.get("min_profit_factor_delta", 0.0))
@@ -501,6 +502,12 @@ def _can_auto_merge(bot: BotConfig, changed_files: list[str], guardrails: Guardr
     if not bot.auto_merge_allowed_file_patterns:
         return False
     return not _disallowed_files(changed_files, bot.auto_merge_allowed_file_patterns)
+
+
+def _guardrail_execution_failed(tests: CommandCheck, baseline: dict[str, BacktestResult], candidate: dict[str, BacktestResult]) -> bool:
+    if not tests.skipped and not tests.ok:
+        return True
+    return any(not result.ok for result in [*baseline.values(), *candidate.values()])
 
 
 def _check_label(check: CommandCheck) -> str:
