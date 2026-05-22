@@ -35,6 +35,8 @@ class BotReview:
     logs: dict[str, Any]
     runtime_status: dict[str, Any]
     backtest: dict[str, Any]
+    portfolio: dict[str, Any]
+    postmortem: dict[str, Any]
     recommendations: list[dict[str, Any]]
     parameter_overlays: list[dict[str, Any]] = field(default_factory=list)
     railway_variable_plan: dict[str, Any] = field(default_factory=dict)
@@ -48,6 +50,8 @@ def build_review(
     git_info: GitInfo,
     logs: LogAnalysis,
     backtest: BacktestResult | None,
+    portfolio: dict[str, Any],
+    postmortem: dict[str, Any],
     recommendations: list[Recommendation],
     overlays: list[dict[str, Any]],
     deployment_status: dict[str, Any] | None = None,
@@ -105,6 +109,8 @@ def build_review(
         },
         runtime_status=runtime_status or {"ok": False, "sources": [], "payloads": {}, "errors": ["Runtime status was not collected"]},
         backtest=_backtest_payload(backtest),
+        portfolio=portfolio,
+        postmortem=postmortem,
         recommendations=[asdict(item) for item in recommendations],
         parameter_overlays=overlays,
         railway_variable_plan=railway_variable_plan or {},

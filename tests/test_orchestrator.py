@@ -35,7 +35,7 @@ class StubGithub:
 
 
 class StubTelegram:
-    def notify_report_ready(self, **kwargs):
+    def notify_daily_digest(self, *args, **kwargs):
         return PublicationResult(ok=True)
 
 
@@ -62,3 +62,5 @@ def test_orchestrator_dry_run_writes_artifacts(tmp_path) -> None:
     assert payload["reviews"][0]["backtest"]["total_pnl"] == 3.5
     assert payload["reviews"][0]["production"]["railway"]["status"] == "SUCCESS"
     assert payload["reviews"][0]["production"]["active_short_commit"] == "def4567"
+    assert payload["reviews"][0]["portfolio"]["decision"]
+    assert payload["reviews"][0]["postmortem"]["headline"]

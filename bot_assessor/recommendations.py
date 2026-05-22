@@ -3,10 +3,19 @@ from __future__ import annotations
 from bot_assessor.backtest import BacktestResult
 from bot_assessor.config import BotConfig
 from bot_assessor.logs import LogAnalysis
+from bot_assessor.portfolio import PortfolioSummary
+from bot_assessor.postmortem import PostMortemReport
 from bot_assessor.review import Recommendation
 
 
-def build_recommendations(bot: BotConfig, logs: LogAnalysis, backtest: BacktestResult | None) -> list[Recommendation]:
+def build_recommendations(
+    bot: BotConfig,
+    logs: LogAnalysis,
+    backtest: BacktestResult | None,
+    *,
+    portfolio: PortfolioSummary | None = None,
+    postmortem: PostMortemReport | None = None,
+) -> list[Recommendation]:
     recommendations: list[Recommendation] = []
     if logs.errors:
         recommendations.append(
@@ -73,6 +82,34 @@ def build_recommendations(bot: BotConfig, logs: LogAnalysis, backtest: BacktestR
             recommendations.append(
                 Recommendation("medium", "Drawdown is elevated", f"Max drawdown was {backtest.max_drawdown:.2%}.", "Review stop-loss and risk caps before increasing opportunity throughput."),
             )
+    if portfolio is not None:
+        if portfolio.risk_at_stop_pct_nav is not None and portfolio.risk_at_stop_pct_nav > 5.0:
+            recommendations.append(
+                Recommendation(
+                    "high",
+                    "Open risk is above portfolio comfort zone",
+                    f"Risk at stop is {portfolio.risk_at_stop_pct_nav:.2f}% of NAV.",
+                    "Cap new entries and backtest a lower simultaneous-risk ceiling before scaling this bot.",
+                )
+            )
+        if portfolio.margin_used_pct_nav is not None and portfolio.margin_used_pct_nav > 30.0:
+            recommendations.append(
+                Recommendation(
+                    "medium",
+                    "Margin usage is elevated",
+                    f"Margin/collateral usage is {portfolio.margin_used_pct_nav:.2f}% of NAV.",
+                    "Avoid adding correlated exposure until open risk and margin normalize.",
+                )
+            )
+    if postmortem is not None and postmortem.improvement_hypotheses:
+        recommendations.append(
+            Recommendation(
+                "medium" if postmortem.severity != "high" else "high",
+                "Backtest post-mortem hypotheses",
+                f"Post-mortem generated {len(postmortem.improvement_hypotheses)} candidate hypotheses.",
+                "Run the weekly optimizer with deterministic candidates and promote only if all baseline gates improve.",
+            )
+        )
     if not recommendations:
         recommendations.append(Recommendation("info", "No urgent action", "Logs and backtest did not surface a critical issue.", "Keep collecting daily reviews and wait for enough sample size before tuning."))
     return recommendations

@@ -10,6 +10,8 @@ from bot_assessor.command import CommandRunner
 from bot_assessor.config import AssessorConfig, RuntimeOptions
 from bot_assessor.logs import analyze_logs
 from bot_assessor.overlays import build_safe_overlays, overlay_payload
+from bot_assessor.portfolio import build_portfolio_summary
+from bot_assessor.postmortem import build_postmortem
 from bot_assessor.publishers import GitHubIssuePublisher, PublicationResult, RedisPublisher, TelegramNotifier
 from bot_assessor.railway import RailwayDeploymentCollector, RailwayLogCollector
 from bot_assessor.recommendations import build_recommendations
@@ -74,7 +76,9 @@ class BotAssessor:
             backtest: BacktestResult | None = None
             if not self.options.skip_backtests:
                 backtest = self.backtests.run(bot, repo_path=repo_path)
-            recommendations = build_recommendations(bot, log_analysis, backtest)
+            portfolio = build_portfolio_summary(bot, logs=log_analysis, backtest=backtest, runtime_status=runtime_status.as_dict())
+            postmortem = build_postmortem(bot, logs=log_analysis, backtest=backtest, portfolio=portfolio)
+            recommendations = build_recommendations(bot, log_analysis, backtest, portfolio=portfolio, postmortem=postmortem)
             overlays = build_safe_overlays(bot, recommendations, generated_at=generated_at)
             variable_plan = build_railway_variable_plan(bot, recommendations, overlays, generated_at=generated_at)
             review = build_review(
@@ -84,6 +88,8 @@ class BotAssessor:
                 git_info=git_info,
                 logs=log_analysis,
                 backtest=backtest,
+                portfolio=portfolio.as_dict(),
+                postmortem=postmortem.as_dict(),
                 recommendations=recommendations,
                 overlays=overlays,
                 deployment_status=deployment.as_dict(),
@@ -110,5 +116,5 @@ class BotAssessor:
         artifacts = write_artifacts(Path(self.config.artifact_dir), reviews, markdown, generated_at=generated_at)
         title = f"Daily bot assessment - {generated_at.strftime('%Y-%m-%d %H:%M UTC')}"
         github_result = self.github.publish(title=title, body=markdown, labels=self.config.report_labels, dry_run=self.options.dry_run)
-        telegram_result = self.telegram.notify_report_ready(report_url=github_result.url or artifacts.get("markdown"), dry_run=self.options.dry_run)
+        telegram_result = self.telegram.notify_daily_digest(reviews, report_url=github_result.url or artifacts.get("markdown"), dry_run=self.options.dry_run)
         return AssessmentRunResult(reviews, markdown, artifacts, github_result, telegram_result, redis_errors)

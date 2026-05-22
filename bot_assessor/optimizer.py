@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from bot_assessor.backtest import BacktestResult, BacktestRunner
+from bot_assessor.candidates import generate_candidate
 from bot_assessor.command import CommandResult, CommandRunner
 from bot_assessor.config import AssessorConfig, BotConfig, RuntimeOptions
 from bot_assessor.publishers import GitHubIssuePublisher, GitHubPullRequestPublisher, PublicationResult
@@ -116,13 +117,13 @@ class WeeklyOptimizer:
         empty_pr = PublicationResult(ok=True, skipped=True)
         if not bot.optimizer_enabled:
             return self._result(bot, "skipped", None, [], CommandCheck.skipped_check("optimizer disabled"), CommandCheck.skipped_check("not run"), empty_pr, empty_pr)
-        if not bot.optimizer_command:
+        if not bot.optimizer_command and not bot.candidate_generator:
             return self._result(
                 bot,
                 "skipped",
                 None,
                 [],
-                CommandCheck.skipped_check("optimizer_command is not configured"),
+            CommandCheck.skipped_check("candidate_generator or optimizer_command is not configured"),
                 CommandCheck.skipped_check("not run"),
                 empty_pr,
                 empty_pr,
@@ -136,13 +137,16 @@ class WeeklyOptimizer:
         if baseline_dirty_files:
             error = f"baseline backtests modified the working tree: {', '.join(baseline_dirty_files)}"
             return self._result(bot, "failed", branch, baseline_dirty_files, CommandCheck.skipped_check("not run"), CommandCheck.skipped_check("not run"), empty_pr, empty_pr, baseline, {}, [error])
-        optimizer = self._run_optimizer_command(bot, repo_path, branch)
+        optimizer = self._run_candidate_generator(bot, repo_path, branch, baseline, generated_at=generated_at) if bot.candidate_generator else self._run_optimizer_command(bot, repo_path, branch)
         if not optimizer.ok:
             return self._result(bot, "failed", branch, [], optimizer, CommandCheck.skipped_check("optimizer failed"), empty_pr, empty_pr, baseline, {}, [optimizer.error or "optimizer failed"])
 
         changed_files = self.repositories.changed_files(repo_path)
         if not changed_files:
             return self._result(bot, "skipped", branch, [], optimizer, CommandCheck.skipped_check("optimizer produced no changes"), empty_pr, empty_pr, baseline, {})
+        if not bot.allowed_pr_file_patterns:
+            error = "allowed_pr_file_patterns is required before bot-assessor can open autonomous optimization PRs"
+            return self._result(bot, "failed", branch, changed_files, optimizer, CommandCheck.skipped_check("not run"), empty_pr, empty_pr, baseline, {}, [error])
         disallowed_pr_files = _disallowed_files(changed_files, bot.allowed_pr_file_patterns)
         if disallowed_pr_files:
             error = f"changed files are outside allowed_pr_file_patterns: {', '.join(disallowed_pr_files)}"
@@ -160,7 +164,7 @@ class WeeklyOptimizer:
         if self.options.dry_run:
             return self._result(bot, "passed_dry_run", branch, changed_files, optimizer, tests, empty_pr, empty_pr, baseline, candidate, [], guardrails)
 
-        committed = self.repositories.commit_all(repo_path, message=f"Bot assessor weekly optimization for {bot.name}")
+        committed = self.repositories.commit_files(repo_path, changed_files, message=f"Bot assessor weekly optimization for {bot.name}")
         if not committed:
             return self._result(bot, "failed", branch, changed_files, optimizer, tests, empty_pr, empty_pr, baseline, candidate, ["git commit produced no commit"], guardrails)
         pushed = self.repositories.push_branch(repo_path, branch=branch)
@@ -197,6 +201,31 @@ class WeeklyOptimizer:
         env.update({"BOT_ASSESSOR_BOT_ID": bot.id, "BOT_ASSESSOR_BRANCH": branch, "BOT_ASSESSOR_MODE": "weekly_optimizer"})
         result = self.runner.run(bot.optimizer_command, cwd=repo_path, env=env, timeout_seconds=3600)
         return CommandCheck.from_result(result)
+
+    def _run_candidate_generator(
+        self,
+        bot: BotConfig,
+        repo_path: Path,
+        branch: str,
+        baseline: dict[str, BacktestResult],
+        *,
+        generated_at: datetime,
+    ) -> CommandCheck:
+        context = _candidate_context(bot, branch, baseline, generated_at=generated_at)
+        result = generate_candidate(
+            bot.candidate_generator or bot.id,
+            repo_path=repo_path,
+            bot_id=bot.id,
+            context=context,
+            generated_at=generated_at,
+        )
+        return CommandCheck(
+            command=["bot-assessor", "generate-candidate", "--bot", bot.id, "--generator", bot.candidate_generator or bot.id],
+            ok=result.ok,
+            returncode=0 if result.ok else 1,
+            output=result.output[-12000:],
+            error=None if result.ok else result.error,
+        )
 
     def _run_tests(self, bot: BotConfig, repo_path: Path) -> CommandCheck:
         if self.options.skip_tests:
@@ -300,12 +329,41 @@ def _evaluate_scenario(name: str, baseline: BacktestResult | None, candidate: Ba
             reasons.append(f"{name}: profit factor metric missing")
         elif candidate.profit_factor < baseline.profit_factor + min_pf_delta:
             reasons.append(f"{name}: candidate profit factor {candidate.profit_factor:.4f} is below required threshold")
+    min_candidate_pf = guardrails.get("min_candidate_profit_factor")
+    if min_candidate_pf is not None:
+        if candidate.profit_factor is None:
+            reasons.append(f"{name}: candidate profit factor metric missing")
+        elif candidate.profit_factor < float(min_candidate_pf):
+            reasons.append(f"{name}: candidate profit factor {candidate.profit_factor:.4f} is below minimum {float(min_candidate_pf):.4f}")
+    if guardrails.get("require_return_pct_not_worse", False):
+        min_return_delta = float(guardrails.get("min_return_pct_delta", 0.0))
+        if baseline.return_pct is None or candidate.return_pct is None:
+            reasons.append(f"{name}: return metric missing")
+        elif candidate.return_pct < baseline.return_pct + min_return_delta:
+            reasons.append(f"{name}: candidate return {candidate.return_pct:.4f} did not meet baseline {baseline.return_pct:.4f}")
+    if guardrails.get("require_win_rate_not_worse", False):
+        min_win_delta = float(guardrails.get("min_win_rate_delta", 0.0))
+        if baseline.win_rate is None or candidate.win_rate is None:
+            reasons.append(f"{name}: win-rate metric missing")
+        elif candidate.win_rate < baseline.win_rate + min_win_delta:
+            reasons.append(f"{name}: candidate win rate {candidate.win_rate:.4f} did not meet baseline {baseline.win_rate:.4f}")
+    max_trade_count_drop_pct = guardrails.get("max_trade_count_drop_pct")
+    if max_trade_count_drop_pct is not None and baseline.total_trades is not None and candidate.total_trades is not None and baseline.total_trades > 0:
+        drop_pct = (baseline.total_trades - candidate.total_trades) / baseline.total_trades
+        if drop_pct > float(max_trade_count_drop_pct):
+            reasons.append(f"{name}: candidate trade count dropped {drop_pct:.2%}, beyond guardrail")
     max_drawdown_worsening = guardrails.get("max_drawdown_worsening")
     if max_drawdown_worsening is not None:
         if baseline.max_drawdown is None or candidate.max_drawdown is None:
             reasons.append(f"{name}: drawdown metric missing")
         elif abs(candidate.max_drawdown) > abs(baseline.max_drawdown) + float(max_drawdown_worsening):
             reasons.append(f"{name}: candidate drawdown {candidate.max_drawdown:.4f} worsened beyond guardrail")
+    max_candidate_drawdown = guardrails.get("max_candidate_drawdown")
+    if max_candidate_drawdown is not None:
+        if candidate.max_drawdown is None:
+            reasons.append(f"{name}: candidate drawdown metric missing")
+        elif abs(candidate.max_drawdown) > abs(float(max_candidate_drawdown)):
+            reasons.append(f"{name}: candidate drawdown {candidate.max_drawdown:.4f} exceeds maximum {float(max_candidate_drawdown):.4f}")
     return reasons
 
 
@@ -328,8 +386,8 @@ def render_pr_body(
         lines.append(f"- {reason}")
     lines.append("")
     lines.append("## Backtests")
-    lines.append("| Scenario | Baseline PnL | Candidate PnL | Baseline PF | Candidate PF | Baseline DD | Candidate DD |")
-    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
+    lines.append("| Scenario | Baseline Trades | Candidate Trades | Baseline PnL | Candidate PnL | Baseline Return | Candidate Return | Baseline PF | Candidate PF | Baseline DD | Candidate DD |")
+    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
     for name, candidate_result in candidate.items():
         baseline_result = baseline.get(name)
         lines.append(
@@ -337,8 +395,12 @@ def render_pr_body(
             + " | ".join(
                 [
                     name,
+                    _metric(baseline_result.total_trades if baseline_result else None),
+                    _metric(candidate_result.total_trades),
                     _metric(baseline_result.total_pnl if baseline_result else None),
                     _metric(candidate_result.total_pnl),
+                    _metric(baseline_result.return_pct if baseline_result else None),
+                    _metric(candidate_result.return_pct),
                     _metric(baseline_result.profit_factor if baseline_result else None),
                     _metric(candidate_result.profit_factor),
                     _metric(baseline_result.max_drawdown if baseline_result else None),
@@ -396,6 +458,30 @@ def _scenario_configs(bot: BotConfig) -> list[OptimizationBacktestScenario]:
             for index, raw in enumerate(bot.optimizer_backtests)
         ]
     return [OptimizationBacktestScenario(name="default", command=bot.backtest_command, env=bot.backtest_env)]
+
+
+def _candidate_context(bot: BotConfig, branch: str, baseline: dict[str, BacktestResult], *, generated_at: datetime) -> dict[str, Any]:
+    return {
+        "schema_version": "1.0",
+        "generated_at": generated_at.isoformat(),
+        "bot_id": bot.id,
+        "bot_name": bot.name,
+        "branch": branch,
+        "baseline_backtests": {name: _backtest_context(result) for name, result in baseline.items()},
+        "guardrails": dict(bot.optimizer_guardrails),
+    }
+
+
+def _backtest_context(result: BacktestResult) -> dict[str, Any]:
+    return {
+        "ok": result.ok,
+        "total_trades": result.total_trades,
+        "total_pnl": result.total_pnl,
+        "return_pct": result.return_pct,
+        "profit_factor": result.profit_factor,
+        "win_rate": result.win_rate,
+        "max_drawdown": result.max_drawdown,
+    }
 
 
 def _run_path_allowed(path: str, patterns: list[str]) -> bool:

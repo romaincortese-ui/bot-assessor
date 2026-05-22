@@ -88,6 +88,19 @@ class RepositoryManager:
         result = self.runner.run(["git", "commit", "-m", message], cwd=path, timeout_seconds=300)
         return result.ok
 
+    def commit_files(self, repo_path: str | Path, files: list[str], *, message: str) -> bool:
+        path = Path(repo_path)
+        staged_files = [item.replace("\\", "/") for item in files if item.strip()]
+        if not staged_files:
+            return False
+        self.runner.run(["git", "config", "user.name", "bot-assessor"], cwd=path, timeout_seconds=120)
+        self.runner.run(["git", "config", "user.email", "bot-assessor@users.noreply.github.com"], cwd=path, timeout_seconds=120)
+        add = self.runner.run(["git", "add", "--", *staged_files], cwd=path, timeout_seconds=120)
+        if not add.ok:
+            return False
+        result = self.runner.run(["git", "commit", "-m", message], cwd=path, timeout_seconds=300)
+        return result.ok
+
     def push_branch(self, repo_path: str | Path, *, branch: str) -> bool:
         path = Path(repo_path)
         result = self.runner.run(["git", "push", "--force-with-lease", "-u", "origin", branch], cwd=path, timeout_seconds=600)

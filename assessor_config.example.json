@@ -22,13 +22,14 @@
       "allow_parameter_overlays": true,
       "allowed_overlay_types": ["score_offset", "strategy_block", "symbol_block", "threshold_adjustment"],
       "optimizer_enabled": true,
+      "candidate_generator": "mexc_spot_thresholds",
       "optimizer_command": [],
       "optimizer_backtests": [
         {"name": "30d", "command": ["python", "-m", "backtest.run_daily_calibration"], "env": {"BACKTEST_ROLLING_DAYS": "30", "BACKTEST_PRINT_FULL_REPORT": "false"}},
         {"name": "60d", "command": ["python", "-m", "backtest.run_daily_calibration"], "env": {"BACKTEST_ROLLING_DAYS": "60", "BACKTEST_PRINT_FULL_REPORT": "false"}}
       ],
-      "optimizer_guardrails": {"require_tests": true, "require_backtests": true, "require_pnl_improvement": true, "require_profit_factor_not_worse": true, "min_trades": 5, "max_drawdown_worsening": 0.02},
-      "allowed_pr_file_patterns": [],
+      "optimizer_guardrails": {"require_tests": true, "require_backtests": true, "require_pnl_improvement": true, "require_profit_factor_not_worse": true, "require_return_pct_not_worse": true, "require_win_rate_not_worse": false, "min_trades": 5, "min_candidate_profit_factor": 1.05, "max_trade_count_drop_pct": 0.35, "max_drawdown_worsening": 0.02},
+      "allowed_pr_file_patterns": ["mexcbot/**/*.py", "backtest/**/*.py", "tests/**/*.py", "*.py", "*config*.json", "**/*config*.json", "*calibration*.json", "**/*calibration*.json", "*parameter*.json", "**/*parameter*.json"],
       "auto_merge_enabled": true,
       "auto_merge_allowed_file_patterns": ["*calibration*.json", "**/*calibration*.json", "*parameter*.json", "**/*parameter*.json", "*config*.json", "**/*config*.json"]
     },
@@ -48,13 +49,14 @@
       "allow_parameter_overlays": true,
       "allowed_overlay_types": ["score_offset", "strategy_block", "symbol_block", "threshold_adjustment"],
       "optimizer_enabled": true,
+      "candidate_generator": "mexc_futures_thresholds",
       "optimizer_command": [],
       "optimizer_backtests": [
         {"name": "30d", "command": ["python", "run_daily_calibration.py"], "env": {"FUTURES_BACKTEST_ROLLING_DAYS": "30", "BACKTEST_PRINT_FULL_REPORT": "false"}},
         {"name": "60d", "command": ["python", "run_daily_calibration.py"], "env": {"FUTURES_BACKTEST_ROLLING_DAYS": "60", "BACKTEST_PRINT_FULL_REPORT": "false"}}
       ],
-      "optimizer_guardrails": {"require_tests": true, "require_backtests": true, "require_pnl_improvement": true, "require_profit_factor_not_worse": true, "min_trades": 8, "max_drawdown_worsening": 0.015},
-      "allowed_pr_file_patterns": [],
+      "optimizer_guardrails": {"require_tests": true, "require_backtests": true, "require_pnl_improvement": true, "require_profit_factor_not_worse": true, "require_return_pct_not_worse": true, "require_win_rate_not_worse": false, "min_trades": 8, "min_candidate_profit_factor": 1.05, "max_trade_count_drop_pct": 0.30, "max_drawdown_worsening": 0.015},
+      "allowed_pr_file_patterns": ["futuresbot/**/*.py", "tests/**/*.py", "*.py", "*config*.json", "**/*config*.json", "*calibration*.json", "**/*calibration*.json", "*parameter*.json", "**/*parameter*.json"],
       "auto_merge_enabled": true,
       "auto_merge_allowed_file_patterns": ["*calibration*.json", "**/*calibration*.json", "*parameter*.json", "**/*parameter*.json", "*config*.json", "**/*config*.json"]
     },
@@ -74,13 +76,14 @@
       "allow_parameter_overlays": true,
       "allowed_overlay_types": ["score_offset", "strategy_block", "pair_block"],
       "optimizer_enabled": true,
+      "candidate_generator": "forex_risk_caps",
       "optimizer_command": [],
       "optimizer_backtests": [
         {"name": "30d", "command": ["python", "run_daily_calibration.py"], "env": {"BACKTEST_ROLLING_DAYS": "30"}},
         {"name": "90d", "command": ["python", "run_daily_calibration.py"], "env": {"BACKTEST_ROLLING_DAYS": "90"}}
       ],
-      "optimizer_guardrails": {"require_tests": true, "require_backtests": true, "require_pnl_improvement": true, "require_profit_factor_not_worse": true, "min_trades": 3, "max_drawdown_worsening": 0.01},
-      "allowed_pr_file_patterns": [],
+      "optimizer_guardrails": {"require_tests": true, "require_backtests": true, "require_pnl_improvement": true, "require_profit_factor_not_worse": true, "require_return_pct_not_worse": true, "require_win_rate_not_worse": false, "min_trades": 3, "min_candidate_profit_factor": 1.05, "max_trade_count_drop_pct": 0.40, "max_drawdown_worsening": 0.01},
+      "allowed_pr_file_patterns": ["forexbot/**/*.py", "fxbot/**/*.py", "tests/**/*.py", "*.py", "*config*.json", "**/*config*.json", "*calibration*.json", "**/*calibration*.json", "*parameter*.json", "**/*parameter*.json"],
       "auto_merge_enabled": false,
       "auto_merge_allowed_file_patterns": []
     },
@@ -100,13 +103,14 @@
       "allow_parameter_overlays": true,
       "allowed_overlay_types": ["score_offset", "strategy_block"],
       "optimizer_enabled": true,
+      "candidate_generator": "gold_risk_caps",
       "optimizer_command": [],
       "optimizer_backtests": [
         {"name": "30d", "command": ["python", "run_daily_calibration.py"], "env": {"GOLD_BACKTEST_ROLLING_DAYS": "30"}},
         {"name": "60d", "command": ["python", "run_daily_calibration.py"], "env": {"GOLD_BACKTEST_ROLLING_DAYS": "60"}}
       ],
-      "optimizer_guardrails": {"require_tests": true, "require_backtests": true, "require_pnl_improvement": true, "require_profit_factor_not_worse": true, "min_trades": 2, "max_drawdown_worsening": 0.01},
-      "allowed_pr_file_patterns": [],
+      "optimizer_guardrails": {"require_tests": true, "require_backtests": true, "require_pnl_improvement": true, "require_profit_factor_not_worse": true, "require_return_pct_not_worse": true, "require_win_rate_not_worse": false, "min_trades": 2, "min_candidate_profit_factor": 1.05, "max_trade_count_drop_pct": 0.40, "max_drawdown_worsening": 0.01},
+      "allowed_pr_file_patterns": ["goldbot/**/*.py", "tests/**/*.py", "*.py", "*config*.json", "**/*config*.json", "*calibration*.json", "**/*calibration*.json", "*parameter*.json", "**/*parameter*.json"],
       "auto_merge_enabled": false,
       "auto_merge_allowed_file_patterns": []
     },
@@ -126,13 +130,14 @@
       "allow_parameter_overlays": true,
       "allowed_overlay_types": ["score_offset", "strategy_block", "symbol_block", "threshold_adjustment"],
       "optimizer_enabled": true,
+      "candidate_generator": "indices_score_thresholds",
       "optimizer_command": [],
       "optimizer_backtests": [
         {"name": "30d", "command": ["python", "-m", "indicesbot.backtest.run_backtest", "--online", "--days", "30", "--calibrated"], "env": {"BACKTEST_DAYS": "30"}},
         {"name": "60d", "command": ["python", "-m", "indicesbot.backtest.run_backtest", "--online", "--days", "60", "--calibrated"], "env": {"BACKTEST_DAYS": "60"}}
       ],
-      "optimizer_guardrails": {"require_tests": true, "require_backtests": true, "require_pnl_improvement": true, "require_profit_factor_not_worse": true, "min_trades": 2, "max_drawdown_worsening": 0.01},
-      "allowed_pr_file_patterns": [],
+      "optimizer_guardrails": {"require_tests": true, "require_backtests": true, "require_pnl_improvement": true, "require_profit_factor_not_worse": true, "require_return_pct_not_worse": true, "require_win_rate_not_worse": false, "min_trades": 2, "min_candidate_profit_factor": 1.05, "max_trade_count_drop_pct": 0.40, "max_drawdown_worsening": 0.01},
+      "allowed_pr_file_patterns": ["indicesbot/**/*.py", "tests/**/*.py", "*.py", "*config*.json", "**/*config*.json", "*calibration*.json", "**/*calibration*.json", "*parameter*.json", "**/*parameter*.json"],
       "auto_merge_enabled": false,
       "auto_merge_allowed_file_patterns": []
     },

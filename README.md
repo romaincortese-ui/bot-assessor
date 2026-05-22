@@ -10,7 +10,7 @@ The service implements phases 1 through 5 of the automation plan:
 4. Run a weekly PR-generating optimizer that creates candidate branches, runs tests, compares baseline/candidate backtests, and opens PRs.
 5. Allow limited auto-merge only when global and per-bot gates are enabled and changed files match a strict allowlist.
 
-Daily runs do **not** edit trading bot code or deploy bot changes. Weekly optimizer runs can open PRs only after an explicit per-bot `optimizer_command` creates a candidate patch.
+Daily runs do **not** edit trading bot code or deploy bot changes. Weekly optimizer runs can open PRs only after an explicit per-bot `candidate_generator` or `optimizer_command` creates a candidate patch.
 
 ## What It Does
 
@@ -27,19 +27,26 @@ For each bot in `assessor_config.example.json`, the assessor:
 - writes a normalized JSON daily review per bot
 - writes a combined Markdown report
 - publishes the combined report as a GitHub issue
-- sends a short Telegram message: `New daily report ready: <link>`
+- sends a portfolio-style Telegram digest with fleet P&L, open risk, strongest/weakest backtests, and high-severity post-mortems
 - optionally publishes review and overlay JSON to Redis
 - prepares explicit, approval-required Railway variable change plans when a bot has allowlisted variables and mappings configured
 
 The weekly optimizer:
 
 - creates a fresh candidate branch in each enabled bot repo
-- runs the configured `optimizer_command` inside the bot repo
+- runs the configured deterministic `candidate_generator`, or the configured `optimizer_command`, inside the bot repo
 - runs full tests when `test_command` is configured
 - runs baseline and candidate backtests across configured scenarios
-- enforces guardrails such as minimum trades, PnL improvement, profit-factor quality, and drawdown limits
+- enforces guardrails such as minimum trades, PnL improvement, return quality, profit-factor quality, trade-count retention, and drawdown limits
 - opens a GitHub PR in the bot repo with the report in the PR body
 - optionally auto-merges only when `BOT_ASSESSOR_ALLOW_AUTO_MERGE=true`, `auto_merge_enabled=true`, guardrails pass, and every changed file matches `auto_merge_allowed_file_patterns`
+
+The daily assessment now also builds a portfolio-manager view for each bot:
+
+- normalized live P&L, margin/collateral, open stop risk, NAV-relative risk, and rolling backtest metrics
+- a post-mortem section that classifies production errors, execution rejects, stale data, negative expectancy, drawdown pressure, blocker patterns, and broker-sync ambiguity
+- machine-actionable improvement hypotheses that the weekly optimizer can turn into deterministic candidates through a bot-specific `candidate_generator` or `optimizer_command`
+- a Telegram digest summarizing fleet live P&L, open risk, weak/strong rolling backtests, and high-severity post-mortems
 
 ## Required Variables
 
@@ -147,14 +154,15 @@ Each bot supports:
 - `railway_variable_mappings`: mapping from overlay keys such as `threshold_adjustment:score_threshold` to managed Railway variables
 - `allow_parameter_overlays`: whether safe overlays may be published
 - `optimizer_enabled`: whether the weekly optimizer should consider the bot
-- `optimizer_command`: the bot-specific agent/script command that edits the candidate branch
+- `candidate_generator`: built-in deterministic generator name for the bot, such as `mexc_spot_thresholds` or `gold_risk_caps`
+- `optimizer_command`: optional external bot-specific script command that edits the candidate branch when a built-in generator is not used
 - `optimizer_backtests`: named baseline/candidate backtest scenarios, usually 30/60/90-day windows
 - `optimizer_guardrails`: pass/fail rules for tests and candidate performance
-- `allowed_pr_file_patterns`: optional file allowlist for PR generation
+- `allowed_pr_file_patterns`: required file allowlist for PR generation once a generator or optimizer command is configured
 - `auto_merge_enabled`: per-bot phase 5 auto-merge gate
 - `auto_merge_allowed_file_patterns`: stricter file allowlist for phase 5 auto-merge
 
-The example config enables weekly optimizer consideration for Spot, Futures, Forex, Gold, and Indices, but leaves `optimizer_command` empty. Add a bot-specific command only after that bot has a deterministic patch generator or agent workflow. Commodities and Bonds remain assessment-only.
+The example config enables built-in deterministic generators for Spot, Futures, Forex, Gold, and Indices. Commodities and Bonds remain assessment-only until their backtest surfaces are mature enough for safe candidate generation.
 
 ## Weekly Optimizer
 
@@ -165,10 +173,19 @@ python -m bot_assessor optimize --bot mexc_spot
 
 Recommended rollout:
 
-1. Add `optimizer_command` for one mature bot.
+1. Start with the built-in `candidate_generator` for one mature bot, or add a narrow `optimizer_command` for a bot that needs a custom generator.
 2. Run `optimize --dry-run --bot <id>` until the generated patch, tests, and backtests look sane.
 3. Run without dry-run to open manual-review PRs.
-4. Only after several clean weekly PRs, set `BOT_ASSESSOR_ALLOW_AUTO_MERGE=true` and keep auto-merge limited to JSON/config/calibration files.
+4. Require the candidate to beat baseline PnL while preserving return quality, profit factor, drawdown, and enough trade sample size across every configured window.
+5. Only after several clean weekly PRs, set `BOT_ASSESSOR_ALLOW_AUTO_MERGE=true` and keep auto-merge limited to JSON/config/calibration files.
+
+Candidate-generation guidance:
+
+- Start with deterministic patch generators, not free-form code edits. Good first targets are calibration JSON, symbol/strategy block lists, score offsets, cooldowns, risk caps, and profit-lock parameters.
+- Built-in generators read baseline optimizer metrics, choose a defensive, quality-tightening, or selective-expansion posture, produce a narrow patch, and write `bot_assessor_candidate_config.json` explaining the tested hypothesis.
+- Every external generator should read the latest daily review, baseline context, or post-mortem artifact, produce a narrow patch, and explain which hypothesis it is testing.
+- Do not allow optimizer commands to create unrelated artifacts in the bot repo. The optimizer rejects changes outside `allowed_pr_file_patterns`, rejects backtests that dirty the working tree, and commits only the changed files it already inspected.
+- Code-changing generators should remain PR-only until they have a clean track record. Auto-merge should be reserved for tightly allowlisted config/calibration updates.
 
 ## Solution Designs
 

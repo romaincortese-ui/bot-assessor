@@ -7,6 +7,8 @@ from typing import Any
 
 import requests
 
+from bot_assessor.portfolio import fleet_rollup
+
 
 @dataclass(frozen=True)
 class PublicationResult:
@@ -102,6 +104,9 @@ class TelegramNotifier:
             text = f"{text}: {report_url}"
         return self.send_message(text, dry_run=dry_run)
 
+    def notify_daily_digest(self, reviews: list[dict[str, Any]], *, report_url: str | None, dry_run: bool = False) -> PublicationResult:
+        return self.send_message(build_daily_digest_message(reviews, report_url=report_url), dry_run=dry_run)
+
     def send_message(self, text: str, *, dry_run: bool = False) -> PublicationResult:
         if dry_run or not self.token or not self.chat_id:
             return PublicationResult(ok=True, skipped=True)
@@ -113,6 +118,52 @@ class TelegramNotifier:
         if response.status_code >= 300:
             return PublicationResult(ok=False, error=f"Telegram send failed: {response.status_code} {response.text[:500]}")
         return PublicationResult(ok=True)
+
+
+def build_daily_digest_message(reviews: list[dict[str, Any]], *, report_url: str | None = None) -> str:
+    rollup = fleet_rollup(reviews)
+    lines = ["Daily Bot Assessment"]
+    for currency, values in (rollup.get("by_currency") or {}).items():
+        lines.append(
+            f"{currency}: live P&L {_format_money(values.get('live_pnl_amount'), currency)} | "
+            f"risk@stop {_format_money(values.get('risk_at_stop'), currency)} | margin {_format_money(values.get('margin_used'), currency)}"
+        )
+    attention = rollup.get("attention") or []
+    if attention:
+        lines.append("Needs attention: " + ", ".join(attention[:5]))
+    best = rollup.get("best_backtest")
+    worst = rollup.get("worst_backtest")
+    if best:
+        lines.append(f"Best 30d: {best.get('bot')} ({_format_number(best.get('pnl'))})")
+    if worst:
+        lines.append(f"Weakest 30d: {worst.get('bot')} ({_format_number(worst.get('pnl'))})")
+    high_findings = []
+    for review in reviews:
+        postmortem = review.get("postmortem") or {}
+        if postmortem.get("severity") == "high":
+            high_findings.append(str(review.get("bot_name") or review.get("bot_id")))
+    if high_findings:
+        lines.append("High-severity post-mortems: " + ", ".join(high_findings[:5]))
+    if report_url:
+        lines.append(f"Report: {report_url}")
+    return "\n".join(lines)
+
+
+def _format_money(value: Any, currency: str) -> str:
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return "n/a"
+    symbol = "$" if currency == "USD" else "£" if currency == "GBP" else f"{currency} "
+    sign = "+" if amount >= 0 else "-"
+    return f"{sign}{symbol}{abs(amount):.2f}"
+
+
+def _format_number(value: Any) -> str:
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return "n/a"
 
 
 class RedisPublisher:

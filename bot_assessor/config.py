@@ -41,6 +41,7 @@ class BotConfig:
     allow_parameter_overlays: bool = False
     allowed_overlay_types: list[str] = field(default_factory=list)
     optimizer_enabled: bool = False
+    candidate_generator: str | None = None
     optimizer_command: list[str] = field(default_factory=list)
     optimizer_env: dict[str, str] = field(default_factory=dict)
     optimizer_branch_prefix: str = "bot-assessor/weekly"

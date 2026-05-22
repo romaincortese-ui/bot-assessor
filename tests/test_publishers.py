@@ -1,4 +1,4 @@
-from bot_assessor.publishers import GitHubIssuePublisher, GitHubPullRequestPublisher, TelegramNotifier
+from bot_assessor.publishers import GitHubIssuePublisher, GitHubPullRequestPublisher, TelegramNotifier, build_daily_digest_message
 
 
 class FakeResponse:
@@ -54,6 +54,30 @@ def test_telegram_sends_small_report_message() -> None:
 
     assert result.ok is True
     assert session.calls[0][1]["json"]["text"] == "New daily report ready: https://github.test/report"
+
+
+def test_daily_digest_message_summarizes_portfolio_and_postmortems() -> None:
+    message = build_daily_digest_message(
+        [
+            {
+                "bot_name": "Indices Bot",
+                "portfolio": {"currency": "GBP", "live_pnl_amount": -2.5, "risk_at_stop": 12.0, "margin_used": 50.0, "backtest_pnl": 15.0, "state": "attention"},
+                "postmortem": {"severity": "high"},
+            },
+            {
+                "bot_name": "Futures Bot",
+                "portfolio": {"currency": "USD", "live_pnl_amount": 4.0, "risk_at_stop": 8.0, "margin_used": 20.0, "backtest_pnl": 25.0, "state": "healthy"},
+                "postmortem": {"severity": "info"},
+            },
+        ],
+        report_url="https://github.test/report",
+    )
+
+    assert "GBP: live P&L -£2.50" in message
+    assert "USD: live P&L +$4.00" in message
+    assert "Needs attention: Indices Bot" in message
+    assert "High-severity post-mortems: Indices Bot" in message
+    assert "Report: https://github.test/report" in message
 
 
 def test_github_pr_publisher_creates_and_merges_pr() -> None:

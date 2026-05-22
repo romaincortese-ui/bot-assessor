@@ -74,6 +74,7 @@ def _bot(repo: Path, **overrides) -> BotConfig:
         optimizer_command=["python", "optimize.py"],
         optimizer_backtests=[{"name": "30d", "command": ["python", "bt.py"], "env": {}}],
         optimizer_guardrails={"require_tests": True, "require_backtests": True, "require_pnl_improvement": True, "require_profit_factor_not_worse": True, "min_trades": 5, "max_drawdown_worsening": 0.02},
+        allowed_pr_file_patterns=["config/*.json"],
         auto_merge_enabled=False,
         auto_merge_allowed_file_patterns=["**/*calibration*.json"],
     )
@@ -116,7 +117,7 @@ def test_weekly_optimizer_rejects_auto_merge_file_outside_allowlist(tmp_path: Pa
     result = WeeklyOptimizer(
         _config(tmp_path, bot),
         RuntimeOptions(allow_auto_merge=True),
-        runner=OptimizerRunner(changed_file="bot.py"),
+        runner=OptimizerRunner(changed_file="config/strategy.json"),
         pr_publisher=prs,
         summary_publisher=StubSummary(),
     ).run()
@@ -136,6 +137,30 @@ def test_weekly_optimizer_skips_missing_optimizer_command(tmp_path: Path) -> Non
     assert "optimizer_command" in (result.results[0].optimizer.error or "")
 
 
+def test_weekly_optimizer_runs_internal_candidate_generator(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "mexcbot").mkdir()
+    (repo / "backtest").mkdir()
+    (repo / "mexcbot" / "config.py").write_text(
+        'score_threshold=env_float("SCORE_THRESHOLD", 37.0)\n'
+        'scalper_threshold=env_float("SCALPER_THRESHOLD", env_float("SCORE_THRESHOLD", 42.0))\n',
+        encoding="utf-8",
+    )
+    (repo / "backtest" / "config.py").write_text(
+        'score_threshold=env_float("BACKTEST_SCORE_THRESHOLD", env_float("SCORE_THRESHOLD", 37.0))\n'
+        'scalper_threshold=env_float("BACKTEST_SCALPER_THRESHOLD", env_float("SCALPER_THRESHOLD", env_float("SCORE_THRESHOLD", 42.0)))\n',
+        encoding="utf-8",
+    )
+    bot = _bot(repo, optimizer_command=[], candidate_generator="mexc_spot_thresholds")
+
+    result = WeeklyOptimizer(_config(tmp_path, bot), RuntimeOptions(), runner=OptimizerRunner(), pr_publisher=StubPRs(), summary_publisher=StubSummary()).run()
+
+    assert result.results[0].optimizer.ok
+    assert "generate-candidate" in result.results[0].optimizer.command
+    assert (repo / "bot_assessor_candidate_config.json").exists()
+
+
 def test_guardrails_fail_when_candidate_does_not_improve(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     (repo / ".git").mkdir(parents=True)
@@ -149,3 +174,37 @@ def test_guardrails_fail_when_candidate_does_not_improve(tmp_path: Path) -> None
 
     assert result.results[0].status == "failed"
     assert any("did not beat baseline" in reason for reason in result.results[0].guardrails.reasons)
+
+
+def test_weekly_optimizer_requires_pr_file_allowlist(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    bot = _bot(repo, allowed_pr_file_patterns=[])
+
+    result = WeeklyOptimizer(_config(tmp_path, bot), RuntimeOptions(), runner=OptimizerRunner(), pr_publisher=StubPRs(), summary_publisher=StubSummary()).run()
+
+    assert result.results[0].status == "failed"
+    assert any("allowed_pr_file_patterns" in reason for reason in result.results[0].errors)
+
+
+def test_guardrails_can_require_return_and_trade_count_quality(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    (repo / ".git").mkdir(parents=True)
+    bot = _bot(
+        repo,
+        optimizer_guardrails={
+            "require_tests": True,
+            "require_backtests": True,
+            "require_pnl_improvement": True,
+            "require_profit_factor_not_worse": True,
+            "require_return_pct_not_worse": True,
+            "max_trade_count_drop_pct": 0.10,
+            "min_trades": 5,
+        },
+    )
+    runner = OptimizerRunner(candidate_output="trades=5 pnl=14.00 return=0.50% pf=1.80 max_dd=-3.00%")
+
+    result = WeeklyOptimizer(_config(tmp_path, bot), RuntimeOptions(), runner=runner, pr_publisher=StubPRs(), summary_publisher=StubSummary()).run()
+
+    assert result.results[0].status == "failed"
+    assert any("trade count dropped" in reason for reason in result.results[0].guardrails.reasons)
