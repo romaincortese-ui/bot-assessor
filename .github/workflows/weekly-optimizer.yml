@@ -19,6 +19,9 @@ jobs:
       BOT_ASSESSOR_GITHUB_TOKEN: ${{ secrets.BOT_ASSESSOR_GITHUB_TOKEN }}
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       REDIS_URL: ${{ secrets.REDIS_URL }}
+      OANDA_API_KEY: ${{ secrets.OANDA_API_KEY }}
+      OANDA_ACCOUNT_ID: ${{ secrets.OANDA_ACCOUNT_ID }}
+      OANDA_ENVIRONMENT: ${{ secrets.OANDA_ENVIRONMENT || 'practice' }}
       BOT_ASSESSOR_ALLOW_AUTO_MERGE: "true"
     steps:
       - uses: actions/checkout@v4
@@ -29,6 +32,14 @@ jobs:
         run: |
           test -n "$BOT_ASSESSOR_GITHUB_TOKEN" || {
             echo "::error::BOT_ASSESSOR_GITHUB_TOKEN secret is required for cross-repo optimization, PR creation, and auto-merge."
+            exit 1
+          }
+          test -n "$OANDA_API_KEY" || {
+            echo "::error::OANDA_API_KEY secret is required for Gold optimizer backtests."
+            exit 1
+          }
+          test -n "$OANDA_ACCOUNT_ID" || {
+            echo "::error::OANDA_ACCOUNT_ID secret is required for Gold optimizer backtests."
             exit 1
           }
       - run: pip install -r requirements.txt

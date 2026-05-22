@@ -56,6 +56,7 @@ Set these in the `bot-assessor` Railway service:
 - `BOT_ASSESSOR_GITHUB_REPO=romaincortese-ui/bot-assessor`
 - `RAILWAY_TOKEN`: token used by the Railway CLI to read logs
 - For phase 4/5 PR creation across bot repos, `BOT_ASSESSOR_GITHUB_TOKEN` must also be able to push branches and open pull requests in each target bot repository.
+- Gold optimizer backtests also require `OANDA_API_KEY`, `OANDA_ACCOUNT_ID`, and `OANDA_ENVIRONMENT=practice|live` in the Assessor runtime, because the Assessor runs Gold backtests from its own cloned workspace.
 
 See `.env.example` for the full variable list.
 
