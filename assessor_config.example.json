@@ -149,16 +149,24 @@
       "railway_environment": "production",
       "setup_command": ["python", "-m", "pip", "install", "-r", "requirements.txt"],
       "backtest_command": ["python", "-m", "commoditiesbot.backtest.run_backtest"],
-      "backtest_env": {"BACKTEST_DAYS": "30"},
-      "maturity": "research",
+      "backtest_env": {"BACKTEST_DAYS": "30", "BACKTEST_OUTPUT_DIR": "backtest_output/bot_assessor_daily"},
+      "test_command": ["python", "-m", "pytest"],
+      "maturity": "macro_mature_high_risk",
       "compatible_review_redis_key": "bot_assessor:commodities:daily_review",
       "overlay_redis_key": "bot_assessor:commodities:overlays",
       "allow_parameter_overlays": false,
       "allowed_overlay_types": [],
-      "optimizer_enabled": false,
+      "optimizer_enabled": true,
+      "candidate_generator": "commodities_risk_caps",
       "optimizer_command": [],
-      "optimizer_guardrails": {"require_tests": true, "require_backtests": true},
-      "auto_merge_enabled": false
+      "optimizer_backtests": [
+        {"name": "30d", "command": ["python", "-m", "commoditiesbot.backtest.run_backtest"], "env": {"BACKTEST_DAYS": "30", "BACKTEST_OUTPUT_DIR": "backtest_output/bot_assessor_30d"}},
+        {"name": "60d", "command": ["python", "-m", "commoditiesbot.backtest.run_backtest"], "env": {"BACKTEST_DAYS": "60", "BACKTEST_OUTPUT_DIR": "backtest_output/bot_assessor_60d"}}
+      ],
+      "optimizer_guardrails": {"require_tests": true, "require_backtests": true, "require_pnl_improvement": true, "require_profit_factor_not_worse": true, "require_return_pct_not_worse": true, "require_win_rate_not_worse": false, "min_trades": 3, "min_candidate_profit_factor": 1.05, "max_trade_count_drop_pct": 0.40, "max_drawdown_worsening": 0.015},
+      "allowed_pr_file_patterns": ["commoditiesbot/config.py", "bot_assessor_candidate_config.json"],
+      "auto_merge_enabled": false,
+      "auto_merge_allowed_file_patterns": []
     },
     {
       "id": "bonds",
@@ -168,16 +176,24 @@
       "railway_environment": "production",
       "setup_command": ["python", "-m", "pip", "install", "-r", "requirements.txt"],
       "backtest_command": ["python", "-m", "bondsbot.backtest.run_backtest"],
-      "backtest_env": {"BACKTEST_DAYS": "30"},
-      "maturity": "research",
+      "backtest_env": {"BACKTEST_DAYS": "30", "BACKTEST_OUTPUT_DIR": "backtest_output/bot_assessor_daily"},
+      "test_command": ["python", "-m", "pytest"],
+      "maturity": "macro_mature",
       "compatible_review_redis_key": "bot_assessor:bonds:daily_review",
       "overlay_redis_key": "bot_assessor:bonds:overlays",
       "allow_parameter_overlays": false,
       "allowed_overlay_types": [],
-      "optimizer_enabled": false,
+      "optimizer_enabled": true,
+      "candidate_generator": "bonds_dv01_caps",
       "optimizer_command": [],
-      "optimizer_guardrails": {"require_tests": true, "require_backtests": true},
-      "auto_merge_enabled": false
+      "optimizer_backtests": [
+        {"name": "30d", "command": ["python", "-m", "bondsbot.backtest.run_backtest"], "env": {"BACKTEST_DAYS": "30", "BACKTEST_OUTPUT_DIR": "backtest_output/bot_assessor_30d"}},
+        {"name": "60d", "command": ["python", "-m", "bondsbot.backtest.run_backtest"], "env": {"BACKTEST_DAYS": "60", "BACKTEST_OUTPUT_DIR": "backtest_output/bot_assessor_60d"}}
+      ],
+      "optimizer_guardrails": {"require_tests": true, "require_backtests": true, "require_pnl_improvement": true, "require_profit_factor_not_worse": true, "require_return_pct_not_worse": true, "require_win_rate_not_worse": false, "min_trades": 3, "min_candidate_profit_factor": 1.05, "max_trade_count_drop_pct": 0.40, "max_drawdown_worsening": 0.01},
+      "allowed_pr_file_patterns": ["bondsbot/config.py", "bot_assessor_candidate_config.json"],
+      "auto_merge_enabled": false,
+      "auto_merge_allowed_file_patterns": []
     }
   ]
 }

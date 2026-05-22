@@ -81,10 +81,9 @@ Safety defaults:
 - Telegram is skipped unless both Telegram variables exist.
 - Redis publishing is skipped unless `REDIS_URL` exists.
 - Overlay publishing is skipped unless `BOT_ASSESSOR_APPLY_OVERLAYS=true`.
-- Research bots, currently Commodities and Bonds, have overlays disabled in config.
+- Commodities and Bonds have overlays disabled in config; their weekly improvements run through PR/backtest gates.
 - Weekly auto-merge is skipped unless both the global variable and per-bot config allow it.
-- Forex and Gold are configured for manual PR approval only.
-- Commodities and Bonds have the weekly optimizer disabled until their data/research foundations are stronger.
+- Forex, Gold, Commodities, Bonds, and Indices are configured for manual PR approval only.
 
 ## Local Run
 
@@ -162,7 +161,7 @@ Each bot supports:
 - `auto_merge_enabled`: per-bot phase 5 auto-merge gate
 - `auto_merge_allowed_file_patterns`: stricter file allowlist for phase 5 auto-merge
 
-The example config enables built-in deterministic generators for Spot, Futures, Forex, Gold, and Indices. Commodities and Bonds remain assessment-only until their backtest surfaces are mature enough for safe candidate generation.
+The example config enables built-in deterministic generators for Spot, Futures, Forex, Gold, Indices, Commodities, and Bonds. Commodities and Bonds start PR-only with overlays and auto-merge disabled while their live track record builds.
 
 ## Weekly Optimizer
 

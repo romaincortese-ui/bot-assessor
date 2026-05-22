@@ -59,6 +59,58 @@ def test_generate_forex_risk_candidate_expands_only_when_baseline_is_strong(tmp_
     assert "0.01575" in (tmp_path / "backtest" / "config.py").read_text(encoding="utf-8")
 
 
+def test_generate_commodities_risk_candidate_tightens_losing_baseline(tmp_path: Path) -> None:
+    (tmp_path / "commoditiesbot").mkdir()
+    (tmp_path / "commoditiesbot" / "config.py").write_text(
+        'max_total_risk_pct=_float("MAX_TOTAL_RISK_PCT", 0.030)\n'
+        'energy_bucket_risk_pct=_float("ENERGY_BUCKET_RISK_PCT", 0.0125)\n'
+        'grains_bucket_risk_pct=_float("GRAINS_BUCKET_RISK_PCT", 0.0100)\n'
+        'softs_bucket_risk_pct=_float("SOFTS_BUCKET_RISK_PCT", 0.0075)\n'
+        'profit_lock_trigger_pct=_float("PROFIT_LOCK_TRIGGER_PCT", 3.0)\n'
+        'profit_lock_pullback_pct=_float("PROFIT_LOCK_PULLBACK_PCT", 1.5)\n',
+        encoding="utf-8",
+    )
+
+    result = generate_candidate(
+        "commodities",
+        repo_path=tmp_path,
+        context={"baseline_backtests": {"30d": {"total_pnl": -20.0, "profit_factor": 0.75, "max_drawdown": -0.03}}},
+    )
+
+    assert result.ok
+    assert result.posture == "defensive_tighten"
+    text = (tmp_path / "commoditiesbot" / "config.py").read_text(encoding="utf-8")
+    assert "0.027" in text
+    assert "2.6" in text
+    assert "1.3" in text
+
+
+def test_generate_bonds_dv01_candidate_expands_strong_baseline(tmp_path: Path) -> None:
+    (tmp_path / "bondsbot").mkdir()
+    (tmp_path / "bondsbot" / "config.py").write_text(
+        'max_portfolio_dv01_nav_10bp=_float("MAX_PORTFOLIO_DV01_NAV_10BP", 0.005)\n'
+        'max_country_dv01_nav_10bp=_float("MAX_COUNTRY_DV01_NAV_10BP", 0.003)\n'
+        'max_tenor_dv01_nav_10bp=_float("MAX_TENOR_DV01_NAV_10BP", 0.002)\n'
+        'min_live_unit_score=_float("BONDS_MIN_LIVE_UNIT_SCORE", 80.0)\n'
+        'profit_lock_trigger_pct=_float("PROFIT_LOCK_TRIGGER_PCT", 15.0)\n'
+        'profit_lock_pullback_pct=_float("PROFIT_LOCK_PULLBACK_PCT", 2.0)\n',
+        encoding="utf-8",
+    )
+
+    result = generate_candidate(
+        "bonds_dv01_caps",
+        repo_path=tmp_path,
+        context={"baseline_backtests": {"60d": {"total_trades": 7, "total_pnl": 80.0, "return_pct": 0.03, "profit_factor": 1.5, "max_drawdown": -0.02}}},
+    )
+
+    assert result.ok
+    assert result.posture == "selective_expand"
+    text = (tmp_path / "bondsbot" / "config.py").read_text(encoding="utf-8")
+    assert "0.00525" in text
+    assert "79.0" in text
+    assert "16.0" in text
+
+
 def test_choose_posture_defaults_to_quality_tighten_for_mixed_baseline() -> None:
     assert choose_posture({"baseline_backtests": {"30d": {"total_pnl": 10.0, "profit_factor": 1.1, "return_pct": 0.01, "max_drawdown": -0.03}}}) == "quality_tighten"
 
